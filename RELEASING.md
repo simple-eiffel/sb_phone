@@ -16,5 +16,5 @@
 
 ## Installing on the phone
 
-- **First time:** open the release page on the phone, tap the APK, and allow installs from the browser when Android asks. While the repo is private, the phone's browser must be signed in to GitHub.
-- **Updates:** Obtainium (free, open source) can watch the repository and install new releases. A private repo needs a fine-grained GitHub token with read-only access to this one repository.
+- **First time:** open the release page on the phone, tap the APK, and allow installs from the browser when Android asks.
+- **Updates:** Obtainium (free, open source) can watch the repository and install new releases. Point it at https://github.com/simple-eiffel/sb_phone.

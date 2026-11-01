@@ -2,7 +2,7 @@
 
 A free, offline Bible-study app for Android. Kotlin and Jetpack Compose; first target device: Samsung Galaxy S21.
 
-**Status:** 0.1.0, first working build. Private repository; not yet published.
+**Status:** 0.1.0, first test build. Public repository: https://github.com/simple-eiffel/sb_phone
 
 ## What it does
 
