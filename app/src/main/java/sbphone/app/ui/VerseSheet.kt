@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -121,14 +122,31 @@ private fun copyVerse(context: Context, state: AppState, key: Int, share: Boolea
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun OriginalWords(state: AppState, key: Int) {
-    val words = loadOnIo(key) { state.bible.words(key) }
-    if (words == null) { Loading(); return }
-    if (words.isEmpty()) { Empty("No Hebrew or Greek word data for this verse."); return }
+    val data = loadOnIo(key) {
+        val kjv = state.bible.versesAt(key, "KJV").joinToString(" ") { it.text }
+        OriginalData(state.bible.words(key), kjv, state.bible.kjvLinked(key), state.bible.shiftedIn(key))
+    }
+    if (data == null) { Loading(); return }
+    val words = data.words
+    var pick by remember { mutableStateOf<WordPick?>(null) }
+    pick?.let { WordPickDialog(state, it) { pick = null } }
     val hebrew = Ref.fromKey(key).book <= 39
-    val own = words.map { "${it.chapter}:${it.verse}" }.distinct()
-    val ownDiffers = own.size > 1 || own.first() != "${Ref.fromKey(key).chapter}:${Ref.fromKey(key).verse}"
     val credit = state.bible.source(if (hebrew) "macula_hebrew" else "macula_greek")
     Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) {
+        if (data.kjv.isNotBlank()) {
+            Text("KJV  ·  tap a word", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(start = 8.dp))
+            Text(
+                kjvTappable(key, data.kjv, data.linked, data.shifted, MaterialTheme.colorScheme.onBackground, MaterialTheme.colorScheme.primary) { pick = it },
+                style = readingStyle(state.bible.version("KJV"), baseSize(state.textScale)).copy(color = MaterialTheme.colorScheme.onBackground),
+                modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 2.dp, bottom = 4.dp),
+            )
+            if (data.shifted.isNotEmpty()) Text("† Wright (1884) lists this word as changed in meaning since the KJV.", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp, bottom = 8.dp))
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        }
+        if (words.isEmpty()) { Text("No Hebrew or Greek word data for this verse.", modifier = Modifier.padding(8.dp)); return@Column }
+        val own = words.map { "${it.chapter}:${it.verse}" }.distinct()
+        val ownDiffers = own.size > 1 || own.first() != "${Ref.fromKey(key).chapter}:${Ref.fromKey(key).verse}"
         if (ownDiffers) {
             Text("${if (hebrew) "Hebrew" else "Greek"} numbering: ${own.joinToString(", ")}", style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp, bottom = 8.dp))
@@ -143,6 +161,8 @@ private fun OriginalWords(state: AppState, key: Int) {
         if (credit != null) SourceLine(credit.credit)
     }
 }
+
+private data class OriginalData(val words: List<Word>, val kjv: String, val linked: Set<Pair<String, Int>>, val shifted: Set<String>)
 
 @Composable
 private fun WordChip(w: Word, hebrew: Boolean, onClick: () -> Unit) {

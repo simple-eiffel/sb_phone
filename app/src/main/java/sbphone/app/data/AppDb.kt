@@ -46,6 +46,14 @@ data class Rendering(val english: String, val n: Int)
 data class XRef(val toKey: Int, val toEnd: Int, val votes: Int) {
     fun ref(): Ref = Ref.fromKey(toKey).let { if (toEnd > toKey) it.copy(verseEnd = toEnd % 1000) else it }
 }
+data class EnglishSense(val source: String, val year: String, val senseNo: String, val pos: String, val text: String, val cite: String)
+
+/** The original words behind one English word, and how many times the KJV translates each that way. */
+data class Behind(val lemma: Lemma, val n: Int)
+
+/** An English word: its dictionary form, the KJV forms of it, the words behind it, its meanings, and Wright's citations. */
+data class EnglishEntry(val lemma: String, val forms: List<String>, val behind: List<Behind>, val senses: List<EnglishSense>, val shifts: List<Int>)
+
 data class SourceInfo(val code: String, val name: String, val kind: String, val license: String, val credit: String, val url: String, val shareAlike: Boolean)
 
 data class SearchResult(val total: Int, val verses: List<Verse>, val matches: List<Match>)
@@ -113,13 +121,52 @@ class AppDb private constructor(private val db: SQLiteDatabase) {
         buildList { while (c.moveToNext()) add(Sense(c.getString(0), c.getString(1), c.getInt(2), c.getString(3), c.getString(4), c.getString(5), c.getString(6), c.getString(7))) }
     }
 
-    fun renderings(lemma: Int): List<Rendering> = db.rawQuery("SELECT english, n FROM rendering WHERE lemma = ? ORDER BY n DESC", arrayOf(lemma.toString())).use { c ->
+    /** How the KJV translates a word: English dictionary forms with how many times, from the KJV word links. */
+    fun renderings(lemma: Int): List<Rendering> = db.rawQuery(
+        "SELECT coalesce(f.lemma, k.fold) AS w, COUNT(*) AS n FROM kjv_word k LEFT JOIN eng_form f ON f.fold = k.fold WHERE k.lemma = ? GROUP BY w ORDER BY n DESC",
+        arrayOf(lemma.toString())).use { c ->
         buildList { while (c.moveToNext()) add(Rendering(c.getString(0), c.getInt(1))) }
     }
 
     /** Every place a word occurs: (English verse key, the word's gloss there), in canon order. */
     fun occurrences(lemma: Int): List<Pair<Int, String>> = db.rawQuery("SELECT eng_key, gloss FROM word WHERE lemma = ? ORDER BY id", arrayOf(lemma.toString())).use { c ->
         buildList { while (c.moveToNext()) add(c.getInt(0) to c.getString(1)) }
+    }
+
+    /** The Hebrew/Greek word(s) a KJV word translates: the [nth] occurrence of folded word [fold] in the verse. */
+    fun kjvLemmas(engKey: Int, fold: String, nth: Int): List<Lemma> =
+        lemmas("SELECT id, language, headword, translit, pron, strongs, pos, count, number, hint FROM lemma WHERE id IN (SELECT lemma FROM kjv_word WHERE eng_key = ? AND fold = ? AND nth = ?) ORDER BY count DESC",
+            arrayOf(engKey.toString(), fold, nth.toString()))
+
+    /** (fold, nth) of every KJV word in a verse that links to an original word. */
+    fun kjvLinked(engKey: Int): Set<Pair<String, Int>> = db.rawQuery("SELECT DISTINCT fold, nth FROM kjv_word WHERE eng_key = ?", arrayOf(engKey.toString())).use { c ->
+        buildSet { while (c.moveToNext()) add(c.getString(0) to c.getInt(1)) }
+    }
+
+    /** Words in this verse that Wright (1884) lists as having changed meaning since the KJV. */
+    fun shiftedIn(engKey: Int): Set<String> = db.rawQuery("SELECT fold FROM eng_shift WHERE eng_key = ?", arrayOf(engKey.toString())).use { c ->
+        buildSet { while (c.moveToNext()) add(c.getString(0)) }
+    }
+
+    /** An English word with all its KJV forms ("love": love, loved, loveth…), from the folded form typed or tapped. */
+    fun englishEntry(fold: String): EnglishEntry {
+        val lemma = db.rawQuery("SELECT lemma FROM eng_form WHERE fold = ?", arrayOf(fold)).use { if (it.moveToNext()) it.getString(0) else fold }
+        val forms = (db.rawQuery("SELECT fold FROM eng_form WHERE lemma = ? ORDER BY fold", arrayOf(lemma)).use { c -> buildList { while (c.moveToNext()) add(c.getString(0)) } } + fold).distinct()
+        val marks = forms.joinToString(",") { "?" }
+        val args = forms.toTypedArray()
+        val behind = db.rawQuery(
+            "SELECT l.id, l.language, l.headword, l.translit, l.pron, l.strongs, l.pos, l.count, l.number, l.hint, COUNT(*) AS n FROM kjv_word k JOIN lemma l ON l.id = k.lemma WHERE k.fold IN ($marks) GROUP BY l.id ORDER BY n DESC",
+            args).use { c ->
+            buildList { while (c.moveToNext()) add(Behind(Lemma(c.getInt(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4), c.getString(5), c.getString(6), c.getInt(7), c.getString(8), c.getString(9)), c.getInt(10))) }
+        }
+        // Dictionaries are keyed by headword, so look up the dictionary form first, then the forms.
+        val senses = (listOf(lemma) + forms).distinct().flatMap { f ->
+            db.rawQuery("SELECT source, year, sense_no, pos, text, cite FROM eng_sense WHERE fold = ? ORDER BY rowid", arrayOf(f)).use { c ->
+                buildList { while (c.moveToNext()) add(EnglishSense(c.getString(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4), c.getString(5))) }
+            }
+        }.distinct()
+        val shifts = db.rawQuery("SELECT DISTINCT eng_key FROM eng_shift WHERE fold IN ($marks) ORDER BY eng_key", args).use { c -> buildList { while (c.moveToNext()) add(c.getInt(0)) } }
+        return EnglishEntry(lemma, forms, behind, senses, shifts)
     }
 
     fun xrefs(engKey: Int): List<XRef> = db.rawQuery("SELECT to_key, to_end, votes FROM xref WHERE from_key = ? ORDER BY votes DESC LIMIT 80", arrayOf(engKey.toString())).use { c ->

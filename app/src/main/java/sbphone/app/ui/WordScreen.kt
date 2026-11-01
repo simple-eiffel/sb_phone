@@ -59,9 +59,12 @@ fun WordScreen(state: AppState, lemmaId: Int) {
                 FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     for (r in data.renderings.take(24)) {
                         Text("${r.english} ${r.n}", style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 4.dp))
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(12.dp))
+                                .clickable { state.open(Overlay.English(r.english)) }.padding(horizontal = 10.dp, vertical = 4.dp))
                     }
                 }
+                Text("Tap an English word for every Hebrew or Greek word behind it, and what it meant then and now.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp))
                 state.bible.source("KJV-links")?.let { SourceLine(it.credit) }
             }
             if (bySource.isNotEmpty()) item {

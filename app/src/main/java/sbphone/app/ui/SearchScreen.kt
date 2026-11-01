@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import sbphone.app.data.Behind
 import sbphone.app.data.Lemma
 import sbphone.app.data.SearchResult
 import sbphone.fold.Fold
@@ -43,7 +44,7 @@ import sbphone.fold.RefParse
 import sbphone.fold.RefParser
 
 private sealed interface Outcome {
-    data class Found(val result: SearchResult, val refs: List<Ref>, val lemmas: List<Lemma>) : Outcome
+    data class Found(val result: SearchResult, val refs: List<Ref>, val lemmas: List<Lemma>, val english: Pair<String, List<Behind>>? = null) : Outcome
     data class Problem(val message: String) : Outcome
 }
 
@@ -92,7 +93,12 @@ private fun run(state: AppState, text: String): Outcome {
             val result = bible.search(q.query, if (state.searchAllVersions) null else state.version)
             val single = q.query.required.singleOrNull()?.singleOrNull()?.takeIf { it.words.size == 1 && q.query.excluded.isEmpty() }
             val lemmas = single?.let { bible.lemmasMatching(it.words[0], it.words[0].lowercase()) }.orEmpty()
-            Outcome.Found(result, refs, lemmas)
+            // A single English word: the Hebrew and Greek the KJV translates with it.
+            val english = single?.takeIf { !it.prefix && it.words[0].all { ch -> ch in 'a'..'z' } }?.let { m ->
+                val entry = bible.englishEntry(m.words[0])
+                if (entry.behind.isEmpty() && entry.senses.isEmpty()) null else entry.lemma to entry.behind
+            }
+            Outcome.Found(result, refs, lemmas, english)
         }
     }
 }
@@ -107,6 +113,18 @@ private fun Results(state: AppState, found: Outcome.Found) {
                     modifier = Modifier.fillMaxWidth().clickable { state.goTo(r) }.padding(vertical = 6.dp))
             }
             HorizontalDivider()
+        }
+        found.english?.let { (word, behind) ->
+            item {
+                Column(Modifier.fillMaxWidth().clickable { state.open(Overlay.English(word)) }.padding(horizontal = 20.dp, vertical = 10.dp)) {
+                    Text("“$word” in the KJV  →", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                    Text(if (behind.isEmpty()) "What it meant then and means now"
+                        else "Translates ${behind.size} Hebrew and Greek word${if (behind.size == 1) "" else "s"}: " +
+                            behind.take(4).joinToString(", ") { "${it.lemma.translit} (${it.n})" } + if (behind.size > 4) ", …" else "",
+                        style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+                }
+                HorizontalDivider()
+            }
         }
         if (found.lemmas.isNotEmpty()) {
             item { Label("Original words") }
@@ -179,6 +197,7 @@ private fun Help() {
             "love -hate" to "leave out verses with a word",
             "ברא  ·  λογος" to "Hebrew and Greek, with or without points and accents",
             "bara  ·  logos" to "an original word by its sound",
+            "grace" to "also: the Hebrew and Greek the KJV translates as \"grace\", and what it meant then",
             "H1254  ·  G3056" to "a Strong's number",
             "jn 3 16" to "go to a reference",
         )

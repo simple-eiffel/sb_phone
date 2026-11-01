@@ -46,6 +46,7 @@ fun SbApp(state: AppState) {
                 when (overlay) {
                     Overlay.Picker -> PickerScreen(state)
                     is Overlay.Word -> WordScreen(state, overlay.lemma)
+                    is Overlay.English -> EnglishScreen(state, overlay.word)
                     is Overlay.NoteEdit -> NoteEditScreen(state, overlay.key)
                     Overlay.Credits -> CreditsScreen(state)
                     Overlay.Settings -> SettingsScreen(state)

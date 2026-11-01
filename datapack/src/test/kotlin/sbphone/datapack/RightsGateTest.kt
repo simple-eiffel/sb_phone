@@ -36,7 +36,7 @@ class RightsGateTest {
             for (c in Allowlist.corpora) { ins.setString(1, c); ins.setString(2, c); ins.setString(3, "CC BY 4.0"); ins.setString(4, corpusClass(c)); ins.setString(5, "u"); ins.executeUpdate() }
         }
         conc.prepareStatement("INSERT INTO meaning_source VALUES (?,?,?,?,?,?,?)").use { ins ->
-            for (l in Allowlist.lexicons) { ins.setString(1, l); ins.setString(2, l); ins.setString(3, "1900"); ins.setString(4, "CC BY 4.0"); ins.setString(5, lexiconClass(l)); ins.setString(6, "u"); ins.setString(7, "credit"); ins.executeUpdate() }
+            for (l in Allowlist.lexicons + Allowlist.englishDictionaries) { ins.setString(1, l); ins.setString(2, l); ins.setString(3, "1900"); ins.setString(4, "CC BY 4.0"); ins.setString(5, lexiconClass(l)); ins.setString(6, "u"); ins.setString(7, "credit"); ins.executeUpdate() }
         }
         return bible to conc
     }
@@ -44,8 +44,8 @@ class RightsGateTest {
     @Test fun passesWhenEveryRegisterAgrees() {
         val (b, c) = registers()
         val sources = Allowlist.check(b, c)
-        // versions + three credited tables (MACULA Hebrew, MACULA Greek, cross-references) + KJV links + lexicons
-        assertEquals(Allowlist.versions.size + 3 + 1 + Allowlist.lexicons.size, sources.size)
+        // versions + three credited tables (MACULA Hebrew, MACULA Greek, cross-references) + KJV links + lexicons + English dictionaries
+        assertEquals(Allowlist.versions.size + 3 + 1 + Allowlist.lexicons.size + Allowlist.englishDictionaries.size, sources.size)
     }
 
     @Test fun refusesADowngradedVersion() {
@@ -81,5 +81,12 @@ class RightsGateTest {
         val never = setOf("LXX", "TR", "Byz", "SP", "TgO", "TgN", "TgW", "Peshitta", "NWT2013", "NWT1984")
         assertTrue(Allowlist.versions.none { it.code in never })
         assertTrue("STEP" !in Allowlist.lexicons)
+        assertTrue("SEED-KJVSHIFT" !in Allowlist.englishDictionaries)
+    }
+
+    @Test fun refusesARestrictedEnglishDictionary() {
+        val (b, c) = registers(lexiconClass = { if (it == "WEBSTER1828") "internal" else "open" })
+        val e = assertFailsWith<RightsGateFailure> { Allowlist.check(b, c) }
+        assertTrue(e.message!!.contains("WEBSTER1828"))
     }
 }

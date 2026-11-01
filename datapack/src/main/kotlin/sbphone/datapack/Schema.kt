@@ -8,7 +8,8 @@ object Schema {
 
     val tables = listOf(
         "meta", "source", "version", "book", "chapter", "verse", "verse_fts",
-        "word", "lemma", "sense", "rendering", "xref",
+        "word", "lemma", "sense", "xref",
+        "kjv_word", "eng_form", "eng_sense", "eng_shift",
     )
 
     private val ddl = listOf(
@@ -34,8 +35,23 @@ object Schema {
         "CREATE INDEX lemma_ascii ON lemma(ascii)",
         "CREATE TABLE sense(lemma INTEGER NOT NULL, source TEXT NOT NULL REFERENCES source(code), entry TEXT NOT NULL, seq INTEGER NOT NULL, depth INTEGER NOT NULL, label TEXT NOT NULL, gloss TEXT NOT NULL, text TEXT NOT NULL, domain TEXT NOT NULL, note TEXT NOT NULL)",
         "CREATE INDEX sense_lemma ON sense(lemma)",
-        "CREATE TABLE rendering(lemma INTEGER NOT NULL, english TEXT NOT NULL, n INTEGER NOT NULL)",
-        "CREATE INDEX rendering_lemma ON rendering(lemma)",
+        // Each folded KJV word form and its English dictionary form ("loveth" -> "love"), the most common one where the tagger varies.
+        "CREATE TABLE eng_form(fold TEXT PRIMARY KEY, lemma TEXT NOT NULL) WITHOUT ROWID",
+        "CREATE INDEX eng_form_lemma ON eng_form(lemma)",
+        // KJV word -> original word, from the eBible kjv2006 Strong's links. A word is found by its folded
+        // form and which occurrence of that form it is in the verse (nth, from 1), so small spelling
+        // differences between KJV printings elsewhere in the verse do not shift it.
+        "CREATE TABLE kjv_word(eng_key INTEGER NOT NULL, fold TEXT NOT NULL, nth INTEGER NOT NULL, lemma INTEGER NOT NULL)",
+        "CREATE INDEX kjv_word_key ON kjv_word(eng_key)",
+        "CREATE INDEX kjv_word_fold ON kjv_word(fold)",
+        "CREATE INDEX kjv_word_lemma ON kjv_word(lemma)",
+        // What an English word meant then (Blount 1661, Webster 1828, Wright 1884) and today (Open English WordNet).
+        "CREATE TABLE eng_sense(fold TEXT NOT NULL, word TEXT NOT NULL, source TEXT NOT NULL REFERENCES source(code), year TEXT NOT NULL, sense_no TEXT NOT NULL, pos TEXT NOT NULL, text TEXT NOT NULL, cite TEXT NOT NULL)",
+        "CREATE INDEX eng_sense_fold ON eng_sense(fold)",
+        // Wright 1884 lists these words, at these verses, as having changed meaning since the KJV.
+        "CREATE TABLE eng_shift(fold TEXT NOT NULL, eng_key INTEGER NOT NULL)",
+        "CREATE INDEX eng_shift_fold ON eng_shift(fold)",
+        "CREATE INDEX eng_shift_key ON eng_shift(eng_key)",
         "CREATE TABLE xref(from_key INTEGER NOT NULL, to_key INTEGER NOT NULL, to_end INTEGER NOT NULL, votes INTEGER NOT NULL)",
         "CREATE INDEX xref_from ON xref(from_key, votes)",
     )

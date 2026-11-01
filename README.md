@@ -2,13 +2,14 @@
 
 A free, offline Bible-study app for Android. Kotlin and Jetpack Compose; first target device: Samsung Galaxy S21.
 
-**Status:** 0.1.0, first test build. Public repository: https://github.com/simple-eiffel/sb_phone
+**Status:** 0.2.0. Public repository: https://github.com/simple-eiffel/sb_phone
 
 ## What it does
 
 - **Reader:** 11 public texts (KJV, BSB, ASV, YLT, WLC and MAM Hebrew, Westcott-Hort Greek, Targum Jonathan, Tyndale, Wycliffe, Clementine Vulgate), chapter by chapter, swipe to turn, up to three parallel versions.
 - **Tap a verse:** its Hebrew or Greek words (transliteration, gloss, parsing), OpenBible cross-references ranked by votes, every version side by side; highlight, bookmark, note, copy or share with its credit.
 - **Tap a word:** heading and pronunciation, Strong's number, how often it occurs, how the KJV renders it, seven lexicons each in its own words (BDB, UBS Hebrew, TBESH, Abbott-Smith, UBS Greek, Middle Liddell, LSJ), and every place it occurs.
+- **KJV words:** in the verse sheet tap any KJV word (or long-press it in the reader) for the Hebrew or Greek behind it; every English word has a page: all its KJV forms, every original word it translates, what it meant then (Blount 1661, Webster 1828, Wright 1884, with Wright's changed-meaning citations marked †) and today (Open English WordNet).
 - **Search:** words, "phrases", prefixes, OR, -exclusion; Hebrew and Greek with or without points and accents; original words by sound (`bara`, `logos`); Strong's numbers; references (`jn 3 16`).
 - **Library:** bookmarks, highlights, notes (every saved version kept), history; export and import to a file.
 

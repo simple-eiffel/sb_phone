@@ -15,6 +15,7 @@ enum class Tab { Read, Search, Library, More }
 sealed interface Overlay {
     data object Picker : Overlay
     data class Word(val lemma: Int) : Overlay
+    data class English(val word: String) : Overlay
     data class NoteEdit(val key: Int) : Overlay
     data object Credits : Overlay
     data object Settings : Overlay

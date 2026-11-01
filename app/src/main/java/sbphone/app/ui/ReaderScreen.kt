@@ -34,6 +34,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -50,6 +53,7 @@ private data class VerseRow(val key: Int, val byVersion: List<Pair<String, List<
 @Composable
 fun ReaderScreen(state: AppState) {
     val bible = state.bible
+    var pick by remember { mutableStateOf<WordPick?>(null) }
     val pager = rememberPagerState(initialPage = state.page) { bible.chapters.size }
 
     LaunchedEffect(pager.settledPage) { if (pager.settledPage != state.page) state.turnTo(pager.settledPage) }
@@ -60,9 +64,10 @@ fun ReaderScreen(state: AppState) {
         HorizontalDivider()
         HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { index ->
             val (book, chapter) = bible.chapters[index]
-            ChapterPage(state, book, chapter, onVerse = { state.sheetKey = it; state.user.recordVisit(it, state.version) })
+            ChapterPage(state, book, chapter, onVerse = { state.sheetKey = it; state.user.recordVisit(it, state.version) }, onPick = { pick = it })
         }
     }
+    pick?.let { WordPickDialog(state, it) { pick = null } }
     // The sheet steps aside while a word page is open over it, and comes back after Back.
     if (state.sheetKey != 0 && state.overlays.isEmpty()) {
         VerseSheet(state, state.sheetKey, onDismiss = { state.sheetKey = 0 })
@@ -97,7 +102,7 @@ private fun ReaderBar(state: AppState) {
 }
 
 @Composable
-private fun ChapterPage(state: AppState, book: Int, chapter: Int, onVerse: (Int) -> Unit) {
+private fun ChapterPage(state: AppState, book: Int, chapter: Int, onVerse: (Int) -> Unit, onPick: (WordPick) -> Unit) {
     val bible = state.bible
     val versions = remember(state.version, state.parallel, state.parallelOn) {
         listOf(state.version) + if (state.parallelOn) state.parallel.filter { it != state.version } else emptyList()
@@ -172,7 +177,22 @@ private fun ChapterPage(state: AppState, book: Int, chapter: Int, onVerse: (Int)
                             if (marks?.third?.contains(row.key) == true) withStyle(SpanStyle(color = MaterialTheme.colorScheme.secondary)) { append("  ✎") }
                         }
                     }
-                    Text(text, style = style.copy(color = MaterialTheme.colorScheme.onBackground), modifier = Modifier.fillMaxWidth().padding(top = if (i > 0) 4.dp else 0.dp))
+                    // In the KJV, a long press on a word opens the Hebrew or Greek behind it; a tap still opens the verse.
+                    val kjvWords = code == "KJV" && verses.size == 1 && verses[0].text.isNotEmpty()
+                    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+                    val prefix = if (i == 0) "$num ".length else "$code  ".length
+                    Text(text, style = style.copy(color = MaterialTheme.colorScheme.onBackground), onTextLayout = { layout = it },
+                        modifier = Modifier.fillMaxWidth().padding(top = if (i > 0) 4.dp else 0.dp).then(
+                            if (!kjvWords) Modifier else Modifier.pointerInput(row.key, code) {
+                                detectTapGestures(
+                                    onTap = { onVerse(row.key) },
+                                    onLongPress = { pos ->
+                                        val offset = (layout ?: return@detectTapGestures).getOffsetForPosition(pos) - prefix
+                                        pickAt(row.key, verses[0].text, offset)?.let(onPick)
+                                    },
+                                )
+                            },
+                        ))
                 }
             }
         }

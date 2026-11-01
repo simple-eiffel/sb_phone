@@ -41,7 +41,8 @@ class Build(private val biblePath: String, private val concPath: String, private
                     writeLemmas(db, conc, lemmaCounts)
                     writeSenses(db, conc, lemmaCounts.keys)
                     writeHints(db)
-                    writeRenderings(db, conc, lemmaCounts.keys)
+                    val vocabulary = writeKjvWords(db, bible, conc, lemmaCounts.keys)
+                    writeEnglish(db, conc, vocabulary)
                     writeXrefs(db, bible)
                     writeMeta(db)
                     db.commit()
@@ -308,21 +309,123 @@ class Build(private val biblePath: String, private val concPath: String, private
         db.createStatement().use { it.executeUpdate("UPDATE lemma SET hint = coalesce($pick, '')") }
     }
 
-    private fun writeRenderings(db: Connection, conc: Connection, lemmas: Set<Int>) {
-        var n = 0
-        db.prepareStatement("INSERT INTO rendering(lemma, english, n) VALUES (?,?,?)").use { ins ->
-            conc.prepareStatement("SELECT lemma_id, english, n FROM lemma_english WHERE corpus_id = (SELECT corpus_id FROM corpus WHERE code = 'ENG-KJV') ORDER BY lemma_id, n DESC").use { st ->
+    /**
+     * Links each KJV word to the Hebrew or Greek word(s) it translates. Every token takes part in the
+     * occurrence count (nth); only linked tokens are stored. Returns the folded KJV vocabulary.
+     */
+    private fun writeKjvWords(db: Connection, bible: Connection, conc: Connection, lemmas: Set<Int>): Set<String> {
+        // verse key -> token words in order, each with the lemmas it is linked to
+        val verses = HashMap<Int, MutableList<Pair<String, MutableSet<Int>>>>(32_000)
+        val tokenIndex = HashMap<Long, Pair<Int, Int>>(800_000) // token -> (verse key, first word index)
+        val formVotes = HashMap<String, HashMap<String, Int>>()
+        conc.prepareStatement(
+            """SELECT t.token_id, wb.book_id, u.div1, u.div2, t.surface, coalesce(e.headword, '') FROM token t JOIN unit u ON u.unit_id = t.unit_id
+               JOIN work_book wb ON wb.work_id = u.work_id
+               LEFT JOIN lemma e ON e.lemma_id = t.lemma_id AND e.language = 'eng'
+               WHERE t.corpus_id = (SELECT corpus_id FROM corpus WHERE code = 'ENG-KJV') AND wb.book_id BETWEEN 1 AND 66
+               ORDER BY t.unit_id, t.pos, t.token_id"""
+        ).use { st ->
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    val k = key(rs.getInt(2), rs.getString(3), rs.getString(4)) ?: continue
+                    val list = verses.getOrPut(k) { mutableListOf() }
+                    val first = list.size
+                    val forms = Fold.words(rs.getString(5) ?: "")
+                    for (w in forms) list += w to mutableSetOf()
+                    if (list.size > first) tokenIndex[rs.getLong(1)] = k to first
+                    val lemma = Fold.fold(rs.getString(6))
+                    if (forms.size == 1 && lemma.isNotEmpty() && ' ' !in lemma) formVotes.getOrPut(forms[0]) { HashMap() }.merge(lemma, 1, Int::plus)
+                }
+            }
+        }
+        db.prepareStatement("INSERT INTO eng_form(fold, lemma) VALUES (?,?)").use { ins ->
+            for ((form, votes) in formVotes) { ins.setString(1, form); ins.setString(2, votes.maxBy { it.value }.key); ins.addBatch() }
+            ins.executeBatch()
+        }
+        log("English word forms: ${formVotes.size}")
+        conc.prepareStatement(
+            """SELECT l.to_token, a.lemma_id FROM link l JOIN token a ON a.token_id = l.from_token
+               WHERE l.kind = 'translation:ENG-KJV' AND a.corpus_id IN (SELECT corpus_id FROM corpus WHERE code IN ('WLC-MACULA', 'NT-MACULA'))"""
+        ).use { st ->
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    val (k, i) = tokenIndex[rs.getLong(1)] ?: continue
+                    val lemma = rs.getInt(2)
+                    if (lemma in lemmas) verses.getValue(k)[i].second += lemma
+                }
+            }
+        }
+        var rows = 0
+        db.prepareStatement("INSERT INTO kjv_word(eng_key, fold, nth, lemma) VALUES (?,?,?,?)").use { ins ->
+            var pending = 0
+            for ((k, words) in verses) {
+                val seen = HashMap<String, Int>()
+                for ((w, ls) in words) {
+                    val nth = seen.merge(w, 1, Int::plus)!!
+                    for (l in ls) { ins.setInt(1, k); ins.setString(2, w); ins.setInt(3, nth); ins.setInt(4, l); ins.addBatch(); rows++; pending++ }
+                }
+                if (pending >= 5000) { ins.executeBatch(); pending = 0 }
+            }
+            ins.executeBatch()
+        }
+        // Coverage: how many words of the shipped KJV text find their token by (form, occurrence).
+        var total = 0
+        var found = 0
+        bible.prepareStatement("SELECT v.book_id, v.chapter, v.verse, v.text FROM bible_verses v JOIN bible_versions n ON n.id = v.version_id WHERE n.abbreviation = 'KJV'").use { st ->
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    val tokens = verses[Ref.key(rs.getInt(1), rs.getInt(2), rs.getInt(3))]?.groupingBy { it.first }?.eachCount().orEmpty()
+                    val seen = HashMap<String, Int>()
+                    for (w in Fold.words(rs.getString(4) ?: "")) {
+                        total++
+                        if (seen.merge(w, 1, Int::plus)!! <= (tokens[w] ?: 0)) found++
+                    }
+                }
+            }
+        }
+        log("KJV word links: $rows; shipped KJV words that find their token: $found of $total (${"%.1f".format(100.0 * found / total)}%)")
+        return verses.values.flatMap { list -> list.map { it.first } }.toSet() + formVotes.values.flatMap { it.keys }
+    }
+
+    /** What a KJV word meant then and today, and Wright's 1884 list of words whose meaning changed. */
+    private fun writeEnglish(db: Connection, conc: Connection, vocabulary: Set<String>) {
+        val inList = Allowlist.englishDictionaries.joinToString(",") { "'$it'" }
+        var senses = 0
+        db.prepareStatement("INSERT INTO eng_sense(fold, word, source, year, sense_no, pos, text, cite) VALUES (?,?,?,?,?,?,?,?)").use { ins ->
+            conc.prepareStatement("SELECT word, source, year, sense_no, pos, text, cite FROM eng_sense WHERE source IN ($inList) ORDER BY word, source, rowid").use { st ->
                 st.executeQuery().use { rs ->
                     while (rs.next()) {
-                        if (rs.getInt(1) !in lemmas) continue
-                        ins.setInt(1, rs.getInt(1)); ins.setString(2, rs.getString(2)); ins.setInt(3, rs.getInt(3))
-                        ins.addBatch(); n++
+                        val word = rs.getString(1) ?: continue
+                        val fold = Fold.fold(word)
+                        if (fold !in vocabulary) continue
+                        val text = rs.getString(6)?.takeIf { it.isNotBlank() } ?: continue
+                        ins.setString(1, fold); ins.setString(2, word); ins.setString(3, rs.getString(2)); ins.setString(4, rs.getString(3) ?: "")
+                        ins.setString(5, rs.getString(4) ?: ""); ins.setString(6, rs.getString(5) ?: ""); ins.setString(7, text); ins.setString(8, rs.getString(7) ?: "")
+                        ins.addBatch(); senses++
+                        if (senses % 5000 == 0) ins.executeBatch()
                     }
                 }
             }
             ins.executeBatch()
         }
-        log("KJV renderings: $n")
+        val ref = Regex("""^([1-3]?[A-Z]{2,3}) (\d+):(\d+)$""")
+        var shifts = 0
+        var skipped = 0
+        db.prepareStatement("INSERT INTO eng_shift(fold, eng_key) VALUES (?,?)").use { ins ->
+            conc.prepareStatement("SELECT DISTINCT word, ref FROM eng_shift WHERE source = 'WRIGHT1884'").use { st ->
+                st.executeQuery().use { rs ->
+                    while (rs.next()) {
+                        val m = ref.matchEntire(rs.getString(2) ?: "")
+                        val book = m?.let { Books.byCode(it.groupValues[1]) }
+                        if (m == null || book == null) { skipped++; continue }
+                        ins.setString(1, Fold.fold(rs.getString(1) ?: "")); ins.setInt(2, Ref.key(book.id, m.groupValues[2].toInt(), m.groupValues[3].toInt()))
+                        ins.addBatch(); shifts++
+                    }
+                }
+            }
+            ins.executeBatch()
+        }
+        log("English senses: $senses; Wright 1884 changed-word places: $shifts (skipped $skipped citations outside the 66 books or unreadable)")
     }
 
     // ---- cross-references, meta ------------------------------------------------------

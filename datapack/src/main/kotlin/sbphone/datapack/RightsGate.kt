@@ -56,6 +56,12 @@ object Allowlist {
     /** conc.db lexicon sources that ship. */
     val lexicons = listOf("BDB1906", "TBESH", "SDBH", "AS1922", "ML1889", "LSJ", "SDGNT")
 
+    /**
+     * conc.db English dictionaries that ship: what a KJV word meant then, and today.
+     * Never SEED-KJVSHIFT (the vault's own internal list).
+     */
+    val englishDictionaries = listOf("BLOUNT1661", "WRIGHT1884-QUOTING-BACON1604", "WEBSTER1828", "WRIGHT1884", "OEWN2025")
+
     private val okBibleClasses = setOf("open", "attribution", "share_alike")
 
     /** Checks every allowlisted item against its register and returns the credit records. */
@@ -110,7 +116,7 @@ object Allowlist {
                 }
             }
         }
-        for (l in lexicons) {
+        for (l in lexicons + englishDictionaries) {
             conc.prepareStatement("SELECT name, year, license, ship_class, url, credit FROM meaning_source WHERE code = ?").use { st ->
                 st.setString(1, l)
                 st.executeQuery().use { rs ->
@@ -122,7 +128,8 @@ object Allowlist {
                         else if (credit.isBlank()) failures += "lexicon $l: no credit text"
                         else {
                             val license = rs.getString(3) ?: ""
-                            sources += Source(l, "${rs.getString(1)} (${rs.getString(2)})", "Lexicon", license, credit, rs.getString(5) ?: "", license.contains("SA"))
+                            val kind = if (l in englishDictionaries) "English dictionary" else "Lexicon"
+                            sources += Source(l, "${rs.getString(1)} (${rs.getString(2)})", kind, license, credit, rs.getString(5) ?: "", license.contains("SA"))
                         }
                     }
                 }

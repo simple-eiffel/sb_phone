@@ -40,8 +40,10 @@ class Verify(private val biblePath: String, private val outPath: String) {
             if (!allowed.containsAll(shipped)) failures += "verse rows from versions not on the allowlist: ${shipped - allowed}"
             val lexicons = strings(db, "SELECT DISTINCT source FROM sense").toSet()
             if (!Allowlist.lexicons.toSet().containsAll(lexicons)) failures += "senses from sources not on the allowlist: ${lexicons - Allowlist.lexicons.toSet()}"
+            val dictionaries = strings(db, "SELECT DISTINCT source FROM eng_sense").toSet()
+            if (!Allowlist.englishDictionaries.toSet().containsAll(dictionaries)) failures += "English senses from sources not on the allowlist: ${dictionaries - Allowlist.englishDictionaries.toSet()}"
             val credited = strings(db, "SELECT code FROM source").toSet()
-            for (code in shipped + lexicons) if (code !in credited) failures += "$code ships without a credit record"
+            for (code in shipped + lexicons + dictionaries) if (code !in credited) failures += "$code ships without a credit record"
             if (strings(db, "SELECT code FROM source WHERE trim(credit) = '' OR trim(license) = ''").isNotEmpty()) failures += "a source has an empty credit or license"
 
             // 3. Fingerprint scan of every text that does not ship.
@@ -72,7 +74,7 @@ class Verify(private val biblePath: String, private val outPath: String) {
             }
 
             // 4. Counts for the report.
-            for (t in listOf("verse", "word", "lemma", "sense", "rendering", "xref")) {
+            for (t in listOf("verse", "word", "lemma", "sense", "xref", "kjv_word", "eng_form", "eng_sense", "eng_shift")) {
                 lines += "$t: ${strings(db, "SELECT COUNT(*) FROM $t").single()} rows"
             }
         }
