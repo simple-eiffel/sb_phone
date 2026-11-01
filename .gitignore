@@ -1,0 +1,15 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+.kotlin/
+# The built database is an artifact, never committed (it goes inside the APK).
+app/src/main/assets/app.db
+out/
+# Signing material lives outside the repo.
+*.jks
+*.keystore
+keystore.properties
+app/src/main/assets/app.db.size
+*.log
