@@ -10,6 +10,7 @@ object Schema {
         "meta", "source", "version", "book", "chapter", "verse", "verse_fts",
         "word", "lemma", "sense", "xref",
         "kjv_word", "eng_form", "eng_sense", "eng_shift",
+        "tl_lane", "tl_event", "tl_claim", "tl_citation", "tl_place", "tl_event_place", "atlas_land", "atlas_area",
     )
 
     private val ddl = listOf(
@@ -53,6 +54,19 @@ object Schema {
         "CREATE TABLE eng_shift(fold TEXT NOT NULL, eng_key INTEGER NOT NULL)",
         "CREATE INDEX eng_shift_fold ON eng_shift(fold)",
         "CREATE INDEX eng_shift_key ON eng_shift(eng_key)",
+        // Timeline: the author's drafts. Years are astronomical (0 = 1 BC); label is the date as shown.
+        "CREATE TABLE tl_lane(id TEXT PRIMARY KEY, title TEXT NOT NULL, grp TEXT NOT NULL, sort INTEGER NOT NULL)",
+        "CREATE TABLE tl_event(id TEXT PRIMARY KEY, lane TEXT NOT NULL, title TEXT NOT NULL, kind TEXT NOT NULL, importance INTEGER NOT NULL, summary TEXT NOT NULL, status TEXT NOT NULL, earliest INTEGER NOT NULL, latest INTEGER NOT NULL, label TEXT NOT NULL)",
+        "CREATE INDEX tl_event_time ON tl_event(earliest)",
+        "CREATE TABLE tl_claim(event TEXT NOT NULL, ordinal INTEGER NOT NULL, edtf TEXT NOT NULL, label TEXT NOT NULL, chronology TEXT NOT NULL, held_by TEXT NOT NULL, basis TEXT NOT NULL, lean INTEGER NOT NULL, citation TEXT NOT NULL, note TEXT NOT NULL)",
+        "CREATE INDEX tl_claim_event ON tl_claim(event)",
+        "CREATE TABLE tl_citation(id TEXT PRIMARY KEY, text TEXT NOT NULL)",
+        "CREATE TABLE tl_place(id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, min_zoom INTEGER NOT NULL, lon REAL NOT NULL, lat REAL NOT NULL, citation TEXT NOT NULL)",
+        "CREATE TABLE tl_event_place(event TEXT NOT NULL, place TEXT NOT NULL)",
+        // Maps: rings are lon,lat float32 pairs (little-endian).
+        "CREATE TABLE atlas_land(id INTEGER PRIMARY KEY, kind TEXT NOT NULL, ring BLOB NOT NULL)",
+        "CREATE TABLE atlas_area(id INTEGER PRIMARY KEY, name TEXT NOT NULL, year_from INTEGER NOT NULL, year_to INTEGER NOT NULL, west REAL NOT NULL, east REAL NOT NULL, south REAL NOT NULL, north REAL NOT NULL, ring BLOB NOT NULL)",
+        "CREATE INDEX atlas_area_years ON atlas_area(year_from, year_to)",
         "CREATE TABLE xref(from_key INTEGER NOT NULL, to_key INTEGER NOT NULL, to_end INTEGER NOT NULL, votes INTEGER NOT NULL)",
         "CREATE INDEX xref_from ON xref(from_key, votes)",
     )

@@ -72,15 +72,15 @@ fun VerseSheet(state: AppState, key: Int, onDismiss: () -> Unit) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f).navigationBarsPadding()) {
             Text(ref.label(), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 20.dp))
             VerseActions(state, key, onNote = { onDismiss(); state.open(Overlay.NoteEdit(key)) })
-            PrimaryTabRow(selectedTabIndex = tab) {
-                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Original") })
-                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Cross-refs") })
-                Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Compare") })
+            val labels = listOf("Original", "Cross-refs", "Compare") + if (state.packs.isNotEmpty()) listOf("Mine") else emptyList()
+            PrimaryTabRow(selectedTabIndex = tab.coerceAtMost(labels.lastIndex)) {
+                labels.forEachIndexed { i, l -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(l, maxLines = 1) }) }
             }
             when (tab) {
                 0 -> OriginalWords(state, key)
                 1 -> CrossRefs(state, key, onGo = { onDismiss(); state.goTo(it) })
-                else -> Compare(state, key)
+                2 -> Compare(state, key)
+                else -> MineTab(state, key)
             }
         }
     }

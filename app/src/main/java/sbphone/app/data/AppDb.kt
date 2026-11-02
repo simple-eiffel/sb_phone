@@ -48,6 +48,13 @@ data class Rendering(val english: String, val n: Int)
 data class XRef(val toKey: Int, val toEnd: Int, val votes: Int) {
     fun ref(): Ref = Ref.fromKey(toKey).let { if (toEnd > toKey) it.copy(verseEnd = toEnd % 1000) else it }
 }
+data class Lane(val id: String, val title: String, val group: String)
+data class TlEvent(val id: String, val lane: String, val title: String, val kind: String, val importance: Int, val summary: String, val status: String, val earliest: Int, val latest: Int, val label: String)
+data class TlClaim(val label: String, val chronology: String, val heldBy: String, val basis: String, val lean: Boolean, val note: String, val citation: String)
+data class Place(val id: String, val name: String, val kind: String, val minZoom: Int, val lon: Float, val lat: Float)
+/** An empire's outline: lon,lat pairs. Years are astronomical (0 = 1 BC). */
+data class Area(val name: String, val yearFrom: Int, val yearTo: Int, val ring: FloatArray)
+
 data class EnglishSense(val source: String, val year: String, val senseNo: String, val pos: String, val text: String, val cite: String)
 
 /** The original words behind one English word, and how many times the KJV translates each that way. */
@@ -176,6 +183,44 @@ class AppDb private constructor(private val db: SQLiteDatabase) {
         }.distinct()
         val shifts = db.rawQuery("SELECT DISTINCT eng_key FROM eng_shift WHERE fold IN ($marks) ORDER BY eng_key", args).use { c -> buildList { while (c.moveToNext()) add(c.getInt(0)) } }
         return EnglishEntry(lemma, forms, behind, senses, shifts)
+    }
+
+    // ---- timeline (the author's drafts) and atlas ----
+
+    fun lanes(): List<Lane> = db.rawQuery("SELECT id, title, grp FROM tl_lane ORDER BY sort", null).use { c -> buildList { while (c.moveToNext()) add(Lane(c.getString(0), c.getString(1), c.getString(2))) } }
+
+    fun events(lane: String? = null): List<TlEvent> = db.rawQuery(
+        "SELECT id, lane, title, kind, importance, summary, status, earliest, latest, label FROM tl_event" + (if (lane != null) " WHERE lane = ?" else "") + " ORDER BY earliest, latest",
+        if (lane != null) arrayOf(lane) else null).use { c ->
+        buildList { while (c.moveToNext()) add(TlEvent(c.getString(0), c.getString(1), c.getString(2), c.getString(3), c.getInt(4), c.getString(5), c.getString(6), c.getInt(7), c.getInt(8), c.getString(9))) }
+    }
+
+    fun claims(event: String): List<TlClaim> = db.rawQuery(
+        "SELECT c.label, c.chronology, c.held_by, c.basis, c.lean, c.note, COALESCE(t.text, '') FROM tl_claim c LEFT JOIN tl_citation t ON t.id = c.citation WHERE c.event = ? ORDER BY c.ordinal",
+        arrayOf(event)).use { c ->
+        buildList { while (c.moveToNext()) add(TlClaim(c.getString(0), c.getString(1), c.getString(2), c.getString(3), c.getInt(4) == 1, c.getString(5), c.getString(6))) }
+    }
+
+    fun places(event: String? = null): List<Place> = db.rawQuery(
+        if (event == null) "SELECT id, name, kind, min_zoom, lon, lat FROM tl_place"
+        else "SELECT p.id, p.name, p.kind, p.min_zoom, p.lon, p.lat FROM tl_place p JOIN tl_event_place e ON e.place = p.id WHERE e.event = ?",
+        if (event == null) null else arrayOf(event)).use { c ->
+        buildList { while (c.moveToNext()) add(Place(c.getString(0), c.getString(1), c.getString(2), c.getInt(3), c.getDouble(4).toFloat(), c.getDouble(5).toFloat())) }
+    }
+
+    /** Land and lake outlines for the base map, decoded once. */
+    val land: List<Pair<String, FloatArray>> by lazy {
+        db.rawQuery("SELECT kind, ring FROM atlas_land", null).use { c -> buildList { while (c.moveToNext()) add(c.getString(0) to floats(c.getBlob(1))) } }
+    }
+
+    /** The empires standing in an astronomical [year]. */
+    fun areas(year: Int): List<Area> = db.rawQuery("SELECT name, year_from, year_to, ring FROM atlas_area WHERE year_from <= ? AND year_to >= ?", arrayOf(year.toString(), year.toString())).use { c ->
+        buildList { while (c.moveToNext()) add(Area(c.getString(0), c.getInt(1), c.getInt(2), floats(c.getBlob(3)))) }
+    }
+
+    private fun floats(b: ByteArray): FloatArray {
+        val buf = java.nio.ByteBuffer.wrap(b).order(java.nio.ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
+        return FloatArray(buf.remaining()).also { buf.get(it) }
     }
 
     fun xrefs(engKey: Int): List<XRef> = db.rawQuery("SELECT to_key, to_end, votes FROM xref WHERE from_key = ? ORDER BY votes DESC LIMIT 80", arrayOf(engKey.toString())).use { c ->

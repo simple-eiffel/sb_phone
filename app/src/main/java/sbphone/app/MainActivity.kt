@@ -35,6 +35,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import sbphone.app.data.AppDb
 import sbphone.app.data.UserDb
+import sbphone.app.data.PackDb
 import sbphone.app.ui.AppState
 import sbphone.app.ui.SbApp
 import sbphone.app.ui.SbTheme
@@ -62,7 +63,7 @@ private fun Root() {
             try {
                 val s = withContext(Dispatchers.IO) {
                     val bible = AppDb.open(context) { p -> progress = p }
-                    AppState(bible, UserDb(context))
+                    AppState(bible, UserDb(context), PackDb.openAll(context))
                 }
                 Holder.state = s
                 state = s

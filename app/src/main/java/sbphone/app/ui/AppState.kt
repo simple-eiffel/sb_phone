@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import sbphone.app.data.AppDb
+import sbphone.app.data.PackDb
 import sbphone.app.data.UserDb
 import sbphone.fold.Pointing
 import sbphone.fold.PointingLevel
@@ -22,13 +23,21 @@ sealed interface Overlay {
     data class Journal(val id: Long) : Overlay
     data class TagVerses(val tag: Long, val name: String) : Overlay
     data object Memory : Overlay
+    data class PackHome(val file: String) : Overlay
+    data object Timeline : Overlay
+    data class TimelineEvent(val id: String) : Overlay
+    data class Atlas(val year: Int, val place: String?) : Overlay
+    data class PackDocument(val file: String, val id: Long) : Overlay
     data object Prayers : Overlay
     data object Credits : Overlay
     data object Settings : Overlay
     data object About : Overlay
 }
 
-class AppState(val bible: AppDb, val user: UserDb) {
+class AppState(val bible: AppDb, val user: UserDb, initialPacks: List<PackDb> = emptyList()) {
+
+    /** Private packs loaded on this phone from files the user chose (never shipped in the app). */
+    val packs = mutableStateListOf<PackDb>().apply { addAll(initialPacks) }
 
     var tab by mutableStateOf(Tab.Read)
     val overlays = mutableStateListOf<Overlay>()

@@ -25,6 +25,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
+import sbphone.app.data.PackDb
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import sbphone.fold.PointingLevel
 
 @Composable
@@ -42,9 +50,48 @@ fun MoreScreen(state: AppState) {
         }.onSuccess { state.touched(); Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
             .onFailure { Toast.makeText(context, "Import failed: ${it.message}", Toast.LENGTH_LONG).show() }
     }
+    var loadingPack by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf<PackDb?>(null) }
+    val packLoader = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        loadingPack = true
+        Thread {
+            // Copy and check off the main thread; change the app's list of packs on it.
+            val result = runCatching { PackDb.load(context, uri) }
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                loadingPack = false
+                result.onSuccess { pack ->
+                    // A newer copy of the same pack replaces the old one.
+                    state.packs.filter { it.file.name == pack.file.name && it !== pack }.forEach { old -> runCatching { old.close() }; state.packs.remove(old) }
+                    state.packs += pack
+                }
+                Toast.makeText(context, result.fold({ "Loaded: ${it.title}" }, { it.message ?: "That file could not be loaded." }), Toast.LENGTH_LONG).show()
+            }
+        }.start()
+    }
+    removing?.let { p ->
+        AlertDialog(
+            onDismissRequest = { removing = null },
+            title = { Text("Remove “${p.title}” from this phone?") },
+            text = { Text("Only the pack file on this phone is removed. You can load it again from the file any time.") },
+            confirmButton = { TextButton(onClick = { state.packs.remove(p); PackDb.remove(p); removing = null }) { Text("Remove") } },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text("Keep") } },
+        )
+    }
     val due = loadOnIo(state.userRevision) { state.user.dueCards().size to state.user.prayers(answered = false).size }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        Row_("Memory cards", due?.first?.let { if (it > 0) "$it due for review" else "Nothing due right now" } ?: "") { state.open(Overlay.Memory) }
+        for (p in state.packs) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { Row_(p.title, "Your materials · tap to browse and search") { state.open(Overlay.PackHome(p.file.name)) } }
+                TextButton(onClick = { removing = p }, modifier = Modifier.padding(end = 8.dp)) { Text("Remove") }
+            }
+        }
+        Row_(if (loadingPack) "Loading pack…" else "Load pack…", "Open a pack file you downloaded (your own materials). It stays on this phone only.") {
+            if (!loadingPack) packLoader.launch(arrayOf("application/octet-stream", "application/x-sqlite3", "application/vnd.sqlite3", "*/*"))
+        }
+        Row_("Timeline", "The Bible's world from prehistory to the apostles (a draft)") { state.open(Overlay.Timeline) }
+        Row_("Empires atlas", "Who ruled where, year by year, 3400 BC – AD 400") { state.open(Overlay.Atlas(-1000, null)) }
+        Row_("Memory cards",due?.first?.let { if (it > 0) "$it due for review" else "Nothing due right now" } ?: "") { state.open(Overlay.Memory) }
         Row_("Prayer list", due?.second?.let { if (it > 0) "$it on the list" else "Add what you are praying for" } ?: "") { state.open(Overlay.Prayers) }
         Row_("Settings", "Text size, theme, Hebrew pointing, parallel versions") { state.open(Overlay.Settings) }
         Row_("Credits and licenses", "Every text and dataset in this app, with its license") { state.open(Overlay.Credits) }

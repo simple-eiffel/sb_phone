@@ -9,7 +9,7 @@ import java.time.LocalDateTime
 import org.sqlite.SQLiteConfig
 
 /** Builds app.db from the vault databases. Source databases are opened read-only. */
-class Build(private val biblePath: String, private val concPath: String, private val outPath: String) {
+class Build(private val biblePath: String, private val concPath: String, private val outPath: String, private val history: History) {
 
     private fun openReadOnly(path: String): Connection {
         val cfg = SQLiteConfig()
@@ -24,7 +24,7 @@ class Build(private val biblePath: String, private val concPath: String, private
 
         openReadOnly(biblePath).use { bible ->
             openReadOnly(concPath).use { conc ->
-                val sources = Allowlist.check(bible, conc)
+                val sources = Allowlist.check(bible, conc) + history.sources()
                 log("rights gate: ${sources.size} sources pass")
                 DriverManager.getConnection("jdbc:sqlite:$outPath").use { db ->
                     db.createStatement().use { it.execute("PRAGMA journal_mode = OFF") }
@@ -44,6 +44,7 @@ class Build(private val biblePath: String, private val concPath: String, private
                     val vocabulary = writeKjvWords(db, bible, conc, lemmaCounts.keys)
                     writeEnglish(db, conc, vocabulary)
                     writeXrefs(db, bible)
+                    history.write(db)
                     writeMeta(db)
                     db.commit()
                     db.autoCommit = true

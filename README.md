@@ -2,7 +2,7 @@
 
 A free, offline Bible-study app for Android. Kotlin and Jetpack Compose; first target device: Samsung Galaxy S21.
 
-**Status:** 0.4.0. Public repository: https://github.com/simple-eiffel/sb_phone
+**Status:** 0.5.0. Public repository: https://github.com/simple-eiffel/sb_phone
 
 ## What it does
 
@@ -13,6 +13,8 @@ A free, offline Bible-study app for Android. Kotlin and Jetpack Compose; first t
 - **Search:** words, "phrases", prefixes, OR, -exclusion or NOT, (parentheses); original-language terms mixed with English (`H1254 heaven`, `lemma:logos`, `morph:Vqp3ms`, `morph:V-AA*`), with the matched Hebrew or Greek shown; mistakes marked at the character; Hebrew and Greek with or without points and accents; original words by sound (`bara`, `logos`); Strong's numbers; references (`jn 3 16`).
 - **Reading:** Hebrew pointing levels (full, vowels only, consonants only), Back and Forward over places jumped to, Focus reading (text only, bars hidden).
 - **Library:** Favorites in folders (verses or whole chapters, starred in the reader), highlights with reasons (four colors, filterable), notes (every saved version kept, deleted notes restorable), a Journal for notes on a subject (references in it become links), tags, history; export and import everything to a file.
+- **Timeline** of the Bible's world from prehistory to the apostles: Larry Rix's draft, every event visibly marked draft or "to confirm", each date with who holds it and its source. **Empires atlas**, 3400 BC – AD 400: Cliopatria borders year by year on a Natural Earth map, with the timeline's places.
+- **Private packs:** More → Load pack opens a pack file the user downloaded; it is copied into the app's private storage and appears in a verse's **Mine** tab and as a searchable library. Packs never ship in the app (see below).
 - **Memory cards** (Got it waits 1, 2, 4, 8… days; Again keeps it in the review) and a **prayer list** (with a verse; answered with a note; pray again).
 
 ## Trust rules
@@ -52,6 +54,15 @@ $env:JAVA_HOME = 'D:\android\jdk'
 3. a full fingerprint scan finds none of the distinctive verses of any text that does not ship (Septuagint, TR, Byzantine, Samaritan Pentateuch, Targums Onkelos/Neofiti/W, Peshitta, NWT).
 
 The credits screen is generated from the same records.
+
+The build also refuses unless:
+
+4. Cliopatria's own `LICENSE.md` (inside its release zip) still says CC BY 4.0 and Natural Earth's says public domain; timeline places are kept only if they cite a CC BY 4.0 or CC0 source;
+5. a **private-names scan** finds none of the names on a list kept outside every repository (`D:\android\private\private_names.txt`) in any text column of the database. Private people's names never go into a distributed database.
+
+## The private pack (never in this repository)
+
+`.\gradlew.bat :datapack:run --args="--pack"` builds the author's own materials (commentary, frameworks, books, essays) from the vault's build manifests into `D:\android\packs\rix-materials.db`. The builder refuses to write it inside the repository. Restricted ("research only") quotations are never read. The pack is loaded by hand on the author's phone with More → Load pack.
 
 ## License
 

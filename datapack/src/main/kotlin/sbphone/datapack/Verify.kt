@@ -73,7 +73,10 @@ class Verify(private val biblePath: String, private val outPath: String) {
                 if (distinctive == 0) failures += "$code: no distinctive verses to fingerprint (the scan proved nothing)"
             }
 
-            // 4. Counts for the report.
+            // 4. No private person's name anywhere in the shipped database (Larry's rule for anything distributed).
+            failures += PrivateNames.scan(db, lines)
+
+            // 5. Counts for the report.
             for (t in listOf("verse", "word", "lemma", "sense", "xref", "kjv_word", "eng_form", "eng_sense", "eng_shift")) {
                 lines += "$t: ${strings(db, "SELECT COUNT(*) FROM $t").single()} rows"
             }
