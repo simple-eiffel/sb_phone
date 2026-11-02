@@ -42,11 +42,14 @@ fun MoreScreen(state: AppState) {
         }.onSuccess { state.touched(); Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
             .onFailure { Toast.makeText(context, "Import failed: ${it.message}", Toast.LENGTH_LONG).show() }
     }
+    val due = loadOnIo(state.userRevision) { state.user.dueCards().size to state.user.prayers(answered = false).size }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        Row_("Settings", "Text size, theme, parallel versions") { state.open(Overlay.Settings) }
+        Row_("Memory cards", due?.first?.let { if (it > 0) "$it due for review" else "Nothing due right now" } ?: "") { state.open(Overlay.Memory) }
+        Row_("Prayer list", due?.second?.let { if (it > 0) "$it on the list" else "Add what you are praying for" } ?: "") { state.open(Overlay.Prayers) }
+        Row_("Settings", "Text size, theme, Hebrew pointing, parallel versions") { state.open(Overlay.Settings) }
         Row_("Credits and licenses", "Every text and dataset in this app, with its license") { state.open(Overlay.Credits) }
         Row_("About", "What this app does and does not do") { state.open(Overlay.About) }
-        Row_("Export my notes and marks", "Save bookmarks, highlights, notes and history to a file") { exporter.launch("sb-phone-notes-${LocalDate.now()}.json") }
+        Row_("Export my notes and marks", "Save favorites, highlights, notes, journal, tags, cards, prayers and history to a file") { exporter.launch("sb-phone-notes-${LocalDate.now()}.json") }
         Row_("Import notes and marks", "Merge a file saved from this app") { importer.launch(arrayOf("application/json", "text/plain", "*/*")) }
     }
 }

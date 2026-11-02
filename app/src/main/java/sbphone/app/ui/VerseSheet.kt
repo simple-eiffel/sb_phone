@@ -27,7 +27,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -78,14 +86,23 @@ fun VerseSheet(state: AppState, key: Int, onDismiss: () -> Unit) {
     }
 }
 
+private data class VerseMarks(val highlight: sbphone.app.data.Highlight?, val starred: Boolean, val tagged: Int, val card: Boolean)
+
 @Composable
 private fun VerseActions(state: AppState, key: Int, onNote: () -> Unit) {
     val context = LocalContext.current
-    val marks = loadOnIo(state.userRevision, key) { state.user.highlightMap()[key] to state.user.bookmarkedKeys().contains(key) }
+    val marks = loadOnIo(state.userRevision, key) {
+        VerseMarks(state.user.highlight(key), state.user.starredKeys().contains(key), state.user.tagsOf(key).size, state.user.hasCard(key))
+    }
     val dark = isDark(state.theme)
+    var menu by remember { mutableStateOf(false) }
+    var folders by remember { mutableStateOf(false) }
+    var tags by remember { mutableStateOf(false) }
+    if (folders) FolderDialog(state, key) { folders = false }
+    if (tags) TagDialog(state, key) { tags = false }
     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         for (i in highlightNames.indices) {
-            val chosen = marks?.first == i
+            val chosen = marks?.highlight?.color == i
             Box(
                 Modifier.padding(4.dp).size(28.dp).background(highlightColor(i, dark).copy(alpha = 0.9f), CircleShape)
                     .border(if (chosen) 2.dp else 0.dp, if (chosen) MaterialTheme.colorScheme.onSurface else Color.Transparent, CircleShape)
@@ -94,14 +111,39 @@ private fun VerseActions(state: AppState, key: Int, onNote: () -> Unit) {
         }
         Box(Modifier.weight(1f))
         IconButton(onClick = {
-            val added = state.user.toggleBookmark(key, state.version); state.touched()
-            Toast.makeText(context, if (added) "Bookmarked" else "Bookmark removed", Toast.LENGTH_SHORT).show()
+            val added = state.user.toggleStar(key, state.version); state.touched()
+            Toast.makeText(context, if (added) "Added to Favorites" else "Removed from favorites", Toast.LENGTH_SHORT).show()
         }) {
-            Icon(if (marks?.second == true) SbIcons.Bookmark else SbIcons.BookmarkOutline, contentDescription = "Bookmark")
+            Icon(if (marks?.starred == true) SbIcons.Star else SbIcons.StarOutline, contentDescription = "Favorite", tint = if (marks?.starred == true) MaterialTheme.colorScheme.primary else LocalContentColor.current)
         }
         IconButton(onClick = onNote) { Icon(SbIcons.Note, contentDescription = "Note") }
-        IconButton(onClick = { copyVerse(context, state, key, share = false) }) { Icon(SbIcons.Copy, contentDescription = "Copy") }
-        IconButton(onClick = { copyVerse(context, state, key, share = true) }) { Icon(SbIcons.Share, contentDescription = "Share") }
+        Box {
+            IconButton(onClick = { menu = true }) { Icon(SbIcons.MoreVert, contentDescription = "More actions") }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(text = { Text("Add to a folder…") }, onClick = { menu = false; folders = true })
+                DropdownMenuItem(text = { Text(if ((marks?.tagged ?: 0) > 0) "Tags (${marks?.tagged})…" else "Tag…") }, onClick = { menu = false; tags = true })
+                DropdownMenuItem(
+                    text = { Text(if (marks?.card == true) "Memory card ✓" else "Add to memory cards") },
+                    onClick = {
+                        menu = false
+                        if (marks?.card != true) { state.user.addCard(key); state.touched(); Toast.makeText(context, "Added to memory cards", Toast.LENGTH_SHORT).show() }
+                    },
+                )
+                DropdownMenuItem(text = { Text("Copy with credit") }, onClick = { menu = false; copyVerse(context, state, key, share = false) })
+                DropdownMenuItem(text = { Text("Share…") }, onClick = { menu = false; copyVerse(context, state, key, share = true) })
+            }
+        }
+    }
+    // A highlight carries its reason: what the colour means here.
+    marks?.highlight?.let { h ->
+        var reason by remember(key, h.color) { mutableStateOf(h.reason) }
+        OutlinedTextField(
+            value = reason, onValueChange = { reason = it }, singleLine = true,
+            label = { Text("${highlightNames[h.color]} highlight · reason (optional)") },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { state.user.setHighlightReason(key, reason); state.touched() }),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).onFocusChanged { if (!it.isFocused && reason != h.reason) { state.user.setHighlightReason(key, reason); state.touched() } },
+        )
     }
 }
 

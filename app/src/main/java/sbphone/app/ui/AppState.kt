@@ -19,6 +19,10 @@ sealed interface Overlay {
     data class Word(val lemma: Int) : Overlay
     data class English(val word: String) : Overlay
     data class NoteEdit(val key: Int) : Overlay
+    data class Journal(val id: Long) : Overlay
+    data class TagVerses(val tag: Long, val name: String) : Overlay
+    data object Memory : Overlay
+    data object Prayers : Overlay
     data object Credits : Overlay
     data object Settings : Overlay
     data object About : Overlay

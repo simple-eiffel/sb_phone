@@ -130,7 +130,7 @@ private fun ChapterPage(state: AppState, book: Int, chapter: Int, onVerse: (Int)
         val keys = perVersion.flatMap { it.second.keys }.toSortedSet()
         keys.map { k -> VerseRow(k, perVersion.map { (v, m) -> v to m[k].orEmpty() }) }
     }
-    val marks = loadOnIo(state.userRevision) { Triple(state.user.highlightMap(), state.user.bookmarkedKeys(), state.user.notedKeys()) }
+    val marks = loadOnIo(state.userRevision) { Triple(state.user.highlightMap(), state.user.starredKeys(), state.user.notedKeys()) }
     if (rows == null) { Loading(); return }
     if (rows.isEmpty()) {
         val v = bible.version(state.version)
@@ -155,7 +155,8 @@ private fun ChapterPage(state: AppState, book: Int, chapter: Int, onVerse: (Int)
     val base = baseSize(state.textScale)
     LazyColumn(state = list, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         item {
-            Text("${bible.book(book).name} $chapter", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary,
+            val chapterStar = loadOnIo(state.userRevision, book, chapter) { Ref.key(book, chapter, 0) in state.user.starredChapters() } == true
+            Text("${bible.book(book).name} $chapter" + if (chapterStar) "  ★" else "", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 8.dp))
         }
         items(rows, key = { it.key }) { row ->
@@ -195,7 +196,7 @@ private fun ChapterPage(state: AppState, book: Int, chapter: Int, onVerse: (Int)
                             } else append(if (v.rtl) state.hebrew(vs.text) else vs.text)
                         }
                         if (i == 0) {
-                            if (marks?.second?.contains(row.key) == true) withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append("  ▮") }
+                            if (marks?.second?.contains(row.key) == true) withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append("  ★") }
                             if (marks?.third?.contains(row.key) == true) withStyle(SpanStyle(color = MaterialTheme.colorScheme.secondary)) { append("  ✎") }
                         }
                     }
