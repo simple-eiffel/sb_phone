@@ -2,7 +2,9 @@ package sbphone.app.data
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import sbphone.fold.Fold
 import sbphone.fold.Match
+import sbphone.fold.Node
 import sbphone.fold.Ref
 import sbphone.fold.SearchQuery
 import java.io.File
@@ -56,7 +58,14 @@ data class EnglishEntry(val lemma: String, val forms: List<String>, val behind: 
 
 data class SourceInfo(val code: String, val name: String, val kind: String, val license: String, val credit: String, val url: String, val shareAlike: Boolean)
 
-data class SearchResult(val total: Int, val verses: List<Verse>, val matches: List<Match>)
+/**
+ * [byVerse]: the search had original-language terms, so [total] counts verses (English numbering)
+ * and [wordHits] lists the Hebrew or Greek words that matched in each verse.
+ */
+data class SearchResult(
+    val total: Int, val verses: List<Verse>, val matches: List<Match>,
+    val byVerse: Boolean = false, val wordHits: Map<Int, List<String>> = emptyMap(),
+)
 
 /**
  * The shipped Bible database (app.db), read only. It is copied out of the APK into
@@ -187,30 +196,91 @@ class AppDb private constructor(private val db: SQLiteDatabase) {
      * Runs a search. Each match is its own FTS query; the AND / OR / NOT logic is done
      * here, so it does not depend on which FTS query syntax the phone's SQLite has.
      */
-    fun search(query: SearchQuery, version: String?, limit: Int = 400): SearchResult {
+    fun search(query: SearchQuery, version: String?, limit: Int = 400): SearchResult =
+        if (query.hasWordTerms) searchByVerse(query, version ?: "KJV", limit) else searchText(query, version, limit)
+
+    /** Text-only search: results are verse rows of one version, or of every version. */
+    private fun searchText(query: SearchQuery, version: String?, limit: Int): SearchResult {
         val range = version?.let { v -> version(v).let { it.firstId..it.lastId } }
-        fun ids(m: Match): Set<Long> {
+        val found = evaluate(query.root) { node ->
+            val m = (node as Node.Text).match
             val out = HashSet<Long>()
             db.rawQuery("SELECT docid FROM verse_fts WHERE verse_fts MATCH ?", arrayOf(m.fts())).use { c ->
                 while (c.moveToNext()) { val id = c.getLong(0); if (range == null || id in range) out += id }
             }
-            return out
+            out
         }
-        var result: Set<Long>? = null
-        for (clause in query.required.sortedBy { it.size }) {
-            val union = HashSet<Long>()
-            for (m in clause) union += ids(m)
-            result = result?.intersect(union) ?: union
-            if (result.isEmpty()) break
-        }
-        var found = result ?: emptySet()
-        for (m in query.excluded) if (found.isNotEmpty()) found = found - ids(m)
         val sorted = found.sorted()
         val page = sorted.take(limit)
         val verses = if (page.isEmpty()) emptyList() else page.chunked(500).flatMap { chunk ->
             verses("SELECT id, version, book, chapter, verse, eng_key, text FROM verse WHERE id IN (${chunk.joinToString(",")}) ORDER BY id", emptyArray())
         }
-        return SearchResult(sorted.size, verses, query.required.flatten())
+        return SearchResult(sorted.size, verses, query.textMatches)
+    }
+
+    /**
+     * A search with original-language terms (strongs:, lemma:, morph:). Every term yields a set of
+     * verses in English numbering: text terms from [version]'s text, word terms from the Hebrew and
+     * Greek words. The verses are shown in [version], with the original words that matched.
+     */
+    private fun searchByVerse(query: SearchQuery, version: String, limit: Int): SearchResult {
+        val wordTerms = mutableListOf<Pair<String, Array<String>>>()
+        val found = evaluate(query.root) { node ->
+            val out = HashSet<Long>()
+            when (node) {
+                is Node.Text -> db.rawQuery("SELECT v.eng_key FROM verse_fts JOIN verse v ON v.id = verse_fts.docid WHERE verse_fts MATCH ? AND v.version = ?",
+                    arrayOf(node.match.fts(), version)).use { c -> while (c.moveToNext()) out += c.getLong(0) }
+                is Node.WordTerm -> {
+                    val cond = wordCondition(node)
+                    wordTerms += cond
+                    db.rawQuery("SELECT DISTINCT eng_key FROM word WHERE ${cond.first}", cond.second).use { c -> while (c.moveToNext()) out += c.getLong(0) }
+                }
+                else -> Unit
+            }
+            out
+        }
+        val sorted = found.sorted()
+        val page = sorted.take(limit)
+        if (page.isEmpty()) return SearchResult(0, emptyList(), query.textMatches, byVerse = true)
+        val keys = page.joinToString(",")
+        val verses = verses("SELECT id, version, book, chapter, verse, eng_key, text FROM verse WHERE eng_key IN ($keys) AND version = ? ORDER BY eng_key, id", arrayOf(version))
+            .ifEmpty { verses("SELECT v.id, v.version, v.book, v.chapter, v.verse, v.eng_key, v.text FROM verse v JOIN version n ON n.code = v.version WHERE v.eng_key IN ($keys) AND n.code = (CASE WHEN v.book <= 39 THEN 'WLC' ELSE 'WH' END) ORDER BY v.eng_key, v.id", emptyArray()) }
+        // The original words that matched, per verse, for display under each result.
+        val hits = HashMap<Int, MutableList<String>>()
+        for ((cond, args) in wordTerms.distinctBy { it.first + it.second.joinToString() }) {
+            db.rawQuery("SELECT eng_key, surface FROM word WHERE eng_key IN ($keys) AND ($cond) ORDER BY id", args).use { c ->
+                while (c.moveToNext()) hits.getOrPut(c.getInt(0)) { mutableListOf() }.let { l -> val s = c.getString(1); if (s !in l) l += s }
+            }
+        }
+        return SearchResult(sorted.size, verses, query.textMatches, byVerse = true, wordHits = hits)
+    }
+
+    private fun wordCondition(t: Node.WordTerm): Pair<String, Array<String>> = when (t.field) {
+        "strongs" -> "lemma IN (SELECT id FROM lemma WHERE number = ? OR strongs = ?)" to arrayOf(t.value, t.value)
+        "lemma" -> {
+            val f = Fold.fold(t.value)
+            "lemma IN (SELECT id FROM lemma WHERE fold = ? OR ascii = ?)" to arrayOf(f, t.value.lowercase())
+        }
+        else -> if ('*' in t.value || '?' in t.value) "morph GLOB ?" to arrayOf(t.value) else "morph = ?" to arrayOf(t.value)
+    }
+
+    /** AND / OR / NOT over sets from [leaf]. A NOT only ever narrows the AND it stands in. */
+    private fun evaluate(n: Node, leaf: (Node) -> Set<Long>): Set<Long> = when (n) {
+        is Node.Text, is Node.WordTerm -> leaf(n)
+        is Node.Or -> n.items.fold(HashSet<Long>()) { acc, item -> acc.apply { addAll(evaluate(item, leaf)) } }
+        is Node.And -> {
+            val positives = n.items.filter { it !is Node.Not }
+            var result: Set<Long>? = null
+            for (p in positives) {
+                val s = evaluate(p, leaf)
+                result = result?.intersect(s) ?: s
+                if (result.isEmpty()) break
+            }
+            var found = result ?: emptySet()
+            for (neg in n.items.filterIsInstance<Node.Not>()) if (found.isNotEmpty()) found = found - evaluate(neg.item, leaf)
+            found
+        }
+        is Node.Not -> emptySet()
     }
 
     private fun verses(sql: String, args: Array<String>): List<Verse> = db.rawQuery(sql, args).use { c ->

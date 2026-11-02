@@ -25,6 +25,13 @@ case "$1" in
     echo "reader did not appear"; $ADB logcat -d -s AndroidRuntime:E | tail -30 ;;
   shot) mkdir -p "$ROOT/out/shots"; sleep 1; $ADB exec-out screencap -p > "$ROOT/out/shots/$2.png"; echo "out/shots/$2.png" ;;
   tap) $ADB shell input tap "$2" "$3" ;;
+  tapt)
+    # Tap the centre of the first on-screen element whose text or description is exactly $2.
+    label=$2
+    b=$($ADB shell "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; cat /sdcard/ui.xml" | tr '>' '\n' | grep -F -e "text=\"$label\"" -e "content-desc=\"$label\"" | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]\+')
+    set -- $b
+    if [ $# -lt 4 ]; then echo "not on screen: $label"; exit 1; fi
+    $ADB shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 )) ;;
   swipe) $ADB shell input swipe "$2" "$3" "$4" "$5" 300 ;;
   text) $ADB shell input text "$(echo "$2" | sed 's/ /%s/g')" ;;
   key) $ADB shell input keyevent "$2" ;;

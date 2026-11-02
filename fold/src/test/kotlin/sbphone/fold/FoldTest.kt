@@ -59,19 +59,50 @@ class FoldTest {
         assertEquals(RefParse.NotARef, RefParser.parse("grace and peace"))
     }
 
-    @Test fun queryClauses() {
-        val q = (QueryParser.parse("love \"one another\" -hate faith OR hope") as QueryParse.Text).query
-        assertEquals(3, q.required.size)
-        assertEquals(listOf("one", "another"), q.required[1][0].words)
-        assertEquals(2, q.required[2].size)
-        assertEquals(listOf("hate"), q.excluded[0].words)
-        assertEquals("\"one another\"", q.required[1][0].fts())
+    private fun tree(s: String) = (QueryParser.parse(s) as QueryParse.Text).query.root
+    private fun text(vararg w: String, prefix: Boolean = false) = Node.Text(Match(w.toList(), prefix))
+
+    @Test fun queryAndOrNot() {
+        // OR binds the words beside it: love AND "one another" AND NOT hate AND faith, OR hope
+        val root = tree("love \"one another\" -hate faith OR hope")
+        assertEquals(Node.Or(listOf(
+            Node.And(listOf(text("love"), text("one", "another"), Node.Not(text("hate")), text("faith"))),
+            text("hope"),
+        )), root)
+        assertEquals("\"one another\"", Match(listOf("one", "another"), false).fts())
+    }
+
+    @Test fun queryParentheses() {
+        assertEquals(Node.And(listOf(Node.Or(listOf(text("faith"), text("hope"))), text("love"))), tree("(faith OR hope) love"))
+        assertEquals(Node.And(listOf(text("grace"), Node.Not(Node.Or(listOf(text("law"), text("works")))))), tree("grace NOT (law | works)"))
     }
 
     @Test fun queryPrefixAndHebrew() {
-        val q = (QueryParser.parse("μιμ* בָּרָא") as QueryParse.Text).query
-        assertEquals("μιμ*", q.required[0][0].fts())
-        assertEquals("ברא", q.required[1][0].fts())
+        assertEquals(Node.And(listOf(text("μιμ", prefix = true), text("ברא"))), tree("μιμ* בָּרָא"))
+    }
+
+    @Test fun queryWordTerms() {
+        assertEquals(Node.And(listOf(Node.WordTerm("strongs", "H1254"), text("heaven"))), tree("H1254 heaven"))
+        assertEquals(Node.WordTerm("morph", "V-AAI-3S"), tree("morph:V-AAI-3S"))
+        assertEquals(Node.And(listOf(Node.WordTerm("morph", "Vqp*"), Node.WordTerm("lemma", "ברא"))), tree("morph:Vqp* lemma:ברא"))
+        assertEquals(Node.WordTerm("lemma", "logos"), tree("lemma:logos"))
+        assertTrue((QueryParser.parse("morph:Vqp3ms") as QueryParse.Text).query.hasWordTerms)
+    }
+
+    @Test fun queryErrorPositions() {
+        assertEquals(QueryParse.Error("This ( is never closed.", 0), QueryParser.parse("(faith OR hope"))
+        assertEquals(QueryParse.Error("This ) has no ( before it.", 5), QueryParser.parse("faith) hope"))
+        assertEquals(QueryParse.Error("This quotation mark is never closed.", 6), QueryParser.parse("grace \"open"))
+        assertEquals(6, (QueryParser.parse("faith OR") as QueryParse.Error).position)
+        assertEquals(5, (QueryParser.parse("morph:") as QueryParse.Error).position) // at the colon
+    }
+
+    @Test fun hebrewPointingLevels() {
+        val full = "בְּרֵאשִׁ֖ית בָּרָ֣א"
+        assertEquals("בְּרֵאשִׁית בָּרָא", Pointing.apply(full, PointingLevel.Vowels))
+        assertEquals("בראשית ברא", Pointing.apply(full, PointingLevel.Consonants))
+        assertEquals(full, Pointing.apply(full, PointingLevel.Full))
+        assertEquals("כל־אשר׃", Pointing.apply("כָּל־אֲשֶׁ֥ר׃", PointingLevel.Consonants))
     }
 
     @Test fun strongsLookup() {
@@ -84,6 +115,7 @@ class FoldTest {
         assertIs<QueryParse.Error>(QueryParser.parse("\"open"))
         assertIs<QueryParse.Error>(QueryParser.parse("OR love"))
         assertIs<QueryParse.Error>(QueryParser.parse("-hate"))
+        assertIs<QueryParse.Error>(QueryParser.parse("()"))
         assertTrue((QueryParser.parse("love OR") as QueryParse.Error).message.contains("after"))
     }
 }

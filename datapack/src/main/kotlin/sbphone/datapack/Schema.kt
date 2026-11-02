@@ -26,6 +26,7 @@ object Schema {
         "CREATE TABLE word(id INTEGER PRIMARY KEY, eng_key INTEGER NOT NULL, book INTEGER NOT NULL, chapter INTEGER NOT NULL, verse INTEGER NOT NULL, pos INTEGER NOT NULL, surface TEXT NOT NULL, after TEXT NOT NULL, translit TEXT NOT NULL, gloss TEXT NOT NULL, lemma INTEGER NOT NULL, morph TEXT NOT NULL, parse TEXT NOT NULL)",
         "CREATE INDEX word_eng ON word(eng_key)",
         "CREATE INDEX word_lemma ON word(lemma)",
+        "CREATE INDEX word_morph ON word(morph)",
         // number = the displayed number: OSHB extended Strong's for Hebrew/Aramaic (H1254a keeps homographs apart), Strong's for Greek.
         // hint = the first gloss of the first lexicon that has one (BDB / Abbott-Smith first), to tell homographs apart in lists.
         "CREATE TABLE lemma(id INTEGER PRIMARY KEY, language TEXT NOT NULL, headword TEXT NOT NULL, translit TEXT NOT NULL, pron TEXT NOT NULL, strongs TEXT NOT NULL, number TEXT NOT NULL, hint TEXT NOT NULL DEFAULT '', pos TEXT NOT NULL, count INTEGER NOT NULL, fold TEXT NOT NULL, ascii TEXT NOT NULL)",

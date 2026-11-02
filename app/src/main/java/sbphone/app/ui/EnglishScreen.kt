@@ -117,7 +117,7 @@ private fun BehindRow(b: Behind, onClick: () -> Unit) {
 
 @Composable
 fun LemmaHead(l: Lemma) {
-    Text(l.headword, style = if (l.isHebrew) MaterialTheme.typography.titleLarge.copy(fontFamily = HebrewFont) else MaterialTheme.typography.titleLarge)
+    Text(pointed(l.headword), style = if (l.isHebrew) MaterialTheme.typography.titleLarge.copy(fontFamily = HebrewFont) else MaterialTheme.typography.titleLarge)
 }
 
 @Composable

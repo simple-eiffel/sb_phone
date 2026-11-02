@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -37,6 +38,7 @@ import sbphone.app.data.Lemma
 import sbphone.app.data.SearchResult
 import sbphone.fold.Fold
 import sbphone.fold.Match
+import sbphone.fold.Node
 import sbphone.fold.QueryParse
 import sbphone.fold.QueryParser
 import sbphone.fold.Ref
@@ -45,7 +47,7 @@ import sbphone.fold.RefParser
 
 private sealed interface Outcome {
     data class Found(val result: SearchResult, val refs: List<Ref>, val lemmas: List<Lemma>, val english: Pair<String, List<Behind>>? = null) : Outcome
-    data class Problem(val message: String) : Outcome
+    data class Problem(val message: String, val query: String = "", val position: Int = -1) : Outcome
 }
 
 @Composable
@@ -70,7 +72,15 @@ fun SearchScreen(state: AppState) {
         val outcome = loadOnIo(submitted, state.searchAllVersions, state.version) { run(state, submitted) }
         when (outcome) {
             null -> Loading()
-            is Outcome.Problem -> Empty(outcome.message)
+            is Outcome.Problem -> Column(Modifier.padding(20.dp)) {
+                Text(outcome.message, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
+                if (outcome.position >= 0 && outcome.query.isNotEmpty()) {
+                    // Show the search with a marker under the character where the problem is.
+                    Text(outcome.query, style = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.padding(top = 12.dp))
+                    Text(" ".repeat(outcome.position.coerceAtMost(outcome.query.length)) + "^", style = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.error)
+                }
+            }
             is Outcome.Found -> Results(state, outcome)
         }
     }
@@ -88,10 +98,10 @@ private fun run(state: AppState, text: String): Outcome {
             val lemmas = bible.lemmasByStrongs(q.number)
             if (lemmas.isEmpty()) Outcome.Problem("No word carries Strong's ${q.number}.") else Outcome.Found(SearchResult(0, emptyList(), emptyList()), emptyList(), lemmas)
         }
-        is QueryParse.Error -> if (refs.isNotEmpty()) Outcome.Found(SearchResult(0, emptyList(), emptyList()), refs, emptyList()) else Outcome.Problem(q.message)
+        is QueryParse.Error -> if (refs.isNotEmpty()) Outcome.Found(SearchResult(0, emptyList(), emptyList()), refs, emptyList()) else Outcome.Problem(q.message, text, q.position)
         is QueryParse.Text -> {
-            val result = bible.search(q.query, if (state.searchAllVersions) null else state.version)
-            val single = q.query.required.singleOrNull()?.singleOrNull()?.takeIf { it.words.size == 1 && q.query.excluded.isEmpty() }
+            val result = bible.search(q.query, if (state.searchAllVersions && !q.query.hasWordTerms) null else state.version)
+            val single = (q.query.root as? Node.Text)?.match?.takeIf { it.words.size == 1 }
             val lemmas = single?.let { bible.lemmasMatching(it.words[0], it.words[0].lowercase()) }.orEmpty()
             // A single English word: the Hebrew and Greek the KJV translates with it.
             val english = single?.takeIf { !it.prefix && it.words[0].all { ch -> ch in 'a'..'z' } }?.let { m ->
@@ -130,7 +140,7 @@ private fun Results(state: AppState, found: Outcome.Found) {
             item { Label("Original words") }
             items(found.lemmas) { l ->
                 Row(Modifier.fillMaxWidth().clickable { state.open(Overlay.Word(l.id)) }.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(l.headword, style = if (l.isHebrew) MaterialTheme.typography.titleLarge.copy(fontFamily = HebrewFont) else MaterialTheme.typography.titleLarge)
+                    Text(pointed(l.headword), style = if (l.isHebrew) MaterialTheme.typography.titleLarge.copy(fontFamily = HebrewFont) else MaterialTheme.typography.titleLarge)
                     Column(Modifier.weight(1f).padding(start = 12.dp)) {
                         Text(l.translit, fontStyle = FontStyle.Italic)
                         if (l.hint.isNotBlank()) Text(l.hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
@@ -140,10 +150,12 @@ private fun Results(state: AppState, found: Outcome.Found) {
             }
             item { HorizontalDivider() }
         }
-        if (found.result.matches.isNotEmpty()) {
+        if (found.result.matches.isNotEmpty() || found.result.byVerse) {
             item {
-                val shown = found.result.verses.size
-                Label(if (found.result.total == 0) "No verses found" else if (shown < found.result.total) "${found.result.total} verses (first $shown shown)" else "${found.result.total} verses")
+                val r = found.result
+                val shownIn = if (r.byVerse) "  ·  shown in ${r.verses.firstOrNull()?.version ?: state.version}" else ""
+                val first = if (r.byVerse) r.verses.distinctBy { it.engKey }.size else r.verses.size
+                Label(if (r.total == 0) "No verses found" else if (first < r.total) "${r.total} verses (first $first shown)$shownIn" else "${r.total} verses$shownIn")
             }
             items(found.result.verses, key = { it.id }) { v ->
                 val ref = Ref(v.book, v.chapter, v.verse)
@@ -152,7 +164,11 @@ private fun Results(state: AppState, found: Outcome.Found) {
                 Column(Modifier.fillMaxWidth().clickable { state.goTo(eng) }.padding(horizontal = 20.dp, vertical = 8.dp)) {
                     Text(eng.shortLabel() + (if (v.differsFromEnglish) "  [${ref.chapter}:${ref.verse}]" else "") + "  ·  ${v.version}",
                         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                    Text(marked(v.text, found.result.matches), style = readingStyle(version, base * 0.9f).copy(color = MaterialTheme.colorScheme.onBackground))
+                    Text(marked(if (version.rtl) state.hebrew(v.text) else v.text, found.result.matches), style = readingStyle(version, base * 0.9f).copy(color = MaterialTheme.colorScheme.onBackground))
+                    found.result.wordHits[v.engKey]?.let { hits ->
+                        Text("Matched: " + hits.joinToString("  ") { state.hebrew(it) }, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = if (v.book <= 39) HebrewFont else FontFamily.Default),
+                            color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(top = 2.dp))
+                    }
                 }
                 HorizontalDivider()
             }
@@ -194,7 +210,12 @@ private fun Help() {
             "\"living water\"" to "an exact phrase",
             "believ*" to "words that begin with it",
             "faith OR hope" to "either word",
-            "love -hate" to "leave out verses with a word",
+            "love -hate" to "leave out verses with a word (also NOT)",
+            "(faith OR hope) love" to "group with parentheses",
+            "H1254 heaven" to "Strong's number and English together",
+            "lemma:logos  ·  lemma:ברא" to "every form of an original word",
+            "morph:Vqp3ms" to "Hebrew grammar code (qal perfect 3rd masc. sing.)",
+            "morph:V-AAI-3S  ·  morph:V-AA*" to "Greek grammar code; * for any ending",
             "ברא  ·  λογος" to "Hebrew and Greek, with or without points and accents",
             "bara  ·  logos" to "an original word by its sound",
             "grace" to "also: the Hebrew and Greek the KJV translates as \"grace\", and what it meant then",

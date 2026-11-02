@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -59,12 +60,26 @@ fun ReaderScreen(state: AppState) {
     LaunchedEffect(pager.settledPage) { if (pager.settledPage != state.page) state.turnTo(pager.settledPage) }
     LaunchedEffect(state.page) { if (pager.currentPage != state.page) pager.scrollToPage(state.page) }
 
-    Column(Modifier.fillMaxSize()) {
-        ReaderBar(state)
-        HorizontalDivider()
-        HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { index ->
-            val (book, chapter) = bible.chapters[index]
-            ChapterPage(state, book, chapter, onVerse = { state.sheetKey = it; state.user.recordVisit(it, state.version) }, onPick = { pick = it })
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            if (!state.focus) {
+                ReaderBar(state)
+                HorizontalDivider()
+            }
+            HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { index ->
+                val (book, chapter) = bible.chapters[index]
+                ChapterPage(state, book, chapter, onVerse = { state.sheetKey = it; state.user.recordVisit(it, state.version) }, onPick = { pick = it })
+            }
+        }
+        if (state.focus) {
+            // Focus reading: only a faint way back out.
+            IconButton(
+                onClick = { state.focus = false },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.8f), androidx.compose.foundation.shape.CircleShape),
+            ) {
+                Icon(SbIcons.FullscreenExit, contentDescription = "Leave focus reading", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
     pick?.let { WordPickDialog(state, it) { pick = null } }
@@ -79,8 +94,10 @@ private fun ReaderBar(state: AppState) {
     val (book, chapter) = state.chapter
     var versionMenu by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = { state.open(Overlay.Picker) }) {
-            Text("${state.bible.book(book).name} $chapter  ▾", style = MaterialTheme.typography.titleMedium)
+        IconButton(onClick = { state.goBack() }, enabled = state.canGoBack, modifier = Modifier.size(36.dp)) { Icon(SbIcons.Before, contentDescription = "Back") }
+        IconButton(onClick = { state.goForward() }, enabled = state.canGoForward, modifier = Modifier.size(36.dp)) { Icon(SbIcons.Next, contentDescription = "Forward") }
+        TextButton(onClick = { state.open(Overlay.Picker) }, modifier = Modifier.weight(1f, fill = false)) {
+            Text("${state.bible.book(book).short} $chapter ▾", style = MaterialTheme.typography.titleMedium, maxLines = 1)
         }
         Box(Modifier.weight(1f))
         Box {
@@ -98,6 +115,7 @@ private fun ReaderBar(state: AppState) {
             Icon(SbIcons.Columns, contentDescription = if (state.parallelOn) "Parallel on" else "Parallel off",
                 tint = if (state.parallelOn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        IconButton(onClick = { state.focus = true }) { Icon(SbIcons.Fullscreen, contentDescription = "Focus reading", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 
@@ -114,7 +132,11 @@ private fun ChapterPage(state: AppState, book: Int, chapter: Int, onVerse: (Int)
     }
     val marks = loadOnIo(state.userRevision) { Triple(state.user.highlightMap(), state.user.bookmarkedKeys(), state.user.notedKeys()) }
     if (rows == null) { Loading(); return }
-    if (rows.isEmpty()) { Empty("This chapter is not in the chosen versions."); return }
+    if (rows.isEmpty()) {
+        val v = bible.version(state.version)
+        Empty("${v.code} (${v.name}) has ${v.coverage} only, so ${bible.book(book).name} $chapter is not in it. Choose another version from ${v.code} ▾ above.")
+        return
+    }
 
     val list = rememberLazyListState()
     var flash by remember { mutableIntStateOf(0) }
@@ -170,7 +192,7 @@ private fun ChapterPage(state: AppState, book: Int, chapter: Int, onVerse: (Int)
                             }
                             if (vs.text.isEmpty()) {
                                 withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) { append("(omitted in this edition)") }
-                            } else append(vs.text)
+                            } else append(if (v.rtl) state.hebrew(vs.text) else vs.text)
                         }
                         if (i == 0) {
                             if (marks?.second?.contains(row.key) == true) withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append("  ▮") }

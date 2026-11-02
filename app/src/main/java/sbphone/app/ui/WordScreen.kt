@@ -114,7 +114,7 @@ private data class WordData(val lemma: Lemma, val renderings: List<sbphone.app.d
 @Composable
 private fun Heading(lemma: Lemma) {
     Column(Modifier.fillMaxWidth().padding(20.dp)) {
-        Text(lemma.headword, style = if (lemma.isHebrew) MaterialTheme.typography.displaySmall.copy(fontFamily = HebrewFont) else MaterialTheme.typography.displaySmall,
+        Text(pointed(lemma.headword), style = if (lemma.isHebrew) MaterialTheme.typography.displaySmall.copy(fontFamily = HebrewFont) else MaterialTheme.typography.displaySmall,
             textAlign = TextAlign.Start)
         Text(listOf(lemma.translit, lemma.pron.takeIf { it.isNotBlank() }?.let { "($it)" }).filterNotNull().joinToString("  "),
             style = MaterialTheme.typography.titleMedium, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSurfaceVariant)

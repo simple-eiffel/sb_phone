@@ -171,7 +171,7 @@ private fun WordChip(w: Word, hebrew: Boolean, onClick: () -> Unit) {
             Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(w.surface, style = if (hebrew) MaterialTheme.typography.headlineSmall.copy(fontFamily = HebrewFont) else MaterialTheme.typography.titleMedium)
+            Text(if (hebrew) pointed(w.surface) else w.surface, style = if (hebrew) MaterialTheme.typography.headlineSmall.copy(fontFamily = HebrewFont) else MaterialTheme.typography.titleMedium)
             Text(w.translit, style = MaterialTheme.typography.bodySmall, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(w.gloss, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
             Text(w.morph, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -212,7 +212,7 @@ private fun Compare(state: AppState, key: Int) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
                 Text(code + "  ·  " + v.name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
                 val own = if (vs.any { it.differsFromEnglish }) "[" + vs.joinToString(", ") { it.ownLabel } + "] " else ""
-                Text(own + vs.joinToString(" ") { it.text.ifEmpty { "(omitted in this edition)" } }, style = readingStyle(v, base * 0.9f).copy(color = MaterialTheme.colorScheme.onBackground))
+                Text(own + vs.joinToString(" ") { it.text.ifEmpty { "(omitted in this edition)" } }.let { if (v.rtl) state.hebrew(it) else it }, style = readingStyle(v, base * 0.9f).copy(color = MaterialTheme.colorScheme.onBackground))
             }
             HorizontalDivider()
         }

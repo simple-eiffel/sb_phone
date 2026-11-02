@@ -6,6 +6,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
+import sbphone.fold.Pointing
+import sbphone.fold.PointingLevel
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -58,6 +61,13 @@ fun highlightColor(index: Int, dark: Boolean): Color = when (index) {
 
 /** Ezra SIL: Hebrew with full pointing and cantillation, independent of the phone's own fonts. */
 val HebrewFont = FontFamily(Font(R.font.ezra_sil))
+
+/** The chosen Hebrew pointing level, provided at the top of the app. */
+val LocalPointing = compositionLocalOf { PointingLevel.Full }
+
+/** Hebrew or Aramaic text at the chosen pointing level (other text passes through unchanged). */
+@Composable
+fun pointed(text: String): String = Pointing.apply(text, LocalPointing.current)
 
 enum class ThemeChoice { System, Dark, Light }
 

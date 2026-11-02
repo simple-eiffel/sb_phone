@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
+import sbphone.fold.PointingLevel
 
 @Composable
 fun MoreScreen(state: AppState) {
@@ -74,6 +75,16 @@ fun SettingsScreen(state: AppState) {
                     FilterChip(selected = state.theme == t, onClick = { state.chooseTheme(t) }, label = { Text(t.name) }, modifier = Modifier.padding(end = 8.dp))
                 }
             }
+
+            Text("Hebrew pointing", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 24.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                for ((level, label) in listOf(PointingLevel.Full to "Full", PointingLevel.Vowels to "Vowels", PointingLevel.Consonants to "Consonants")) {
+                    FilterChip(selected = state.pointing == level, onClick = { state.choosePointing(level) }, label = { Text(label) }, modifier = Modifier.padding(end = 8.dp))
+                }
+            }
+            Text(state.hebrew("בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים"), style = readingStyle(state.bible.version("WLC"), baseSize(state.textScale)), modifier = Modifier.fillMaxWidth())
+            Text("Full shows the accents (cantillation) too; Vowels drops them; Consonants shows the letters alone.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             Text("Parallel versions (up to three)", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 24.dp))
             Text("Shown under the main version when the columns button in the reader is on.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

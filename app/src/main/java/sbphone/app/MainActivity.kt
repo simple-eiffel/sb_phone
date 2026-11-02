@@ -7,7 +7,9 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import sbphone.app.ui.LocalPointing
 import sbphone.app.ui.isDark
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -78,7 +80,7 @@ private fun Root() {
         onDispose { }
     }
     if (s != null) {
-        SbTheme(s.theme) { SbApp(s) }
+        SbTheme(s.theme) { CompositionLocalProvider(LocalPointing provides s.pointing) { SbApp(s) } }
     } else {
         SbTheme(ThemeChoice.Dark) { Preparing(progress, error) }
     }

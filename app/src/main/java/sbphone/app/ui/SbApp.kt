@@ -1,6 +1,12 @@
 package sbphone.app.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -17,14 +23,32 @@ import androidx.compose.ui.graphics.vector.ImageVector
 
 @Composable
 fun SbApp(state: AppState) {
-    BackHandler(enabled = state.overlays.isNotEmpty() || state.tab != Tab.Read) {
-        if (!state.back()) state.tab = Tab.Read
+    BackHandler(enabled = state.overlays.isNotEmpty() || state.tab != Tab.Read || state.focus) {
+        when {
+            state.back() -> Unit
+            state.focus -> state.focus = false
+            else -> state.tab = Tab.Read
+        }
+    }
+    val focusing = state.focus && state.tab == Tab.Read && state.overlays.isEmpty()
+    // Focus reading also hides the phone's own status and navigation bars (a swipe from the edge shows them briefly).
+    val view = LocalView.current
+    val activity = LocalActivity.current
+    LaunchedEffect(focusing) {
+        val window = activity?.window ?: return@LaunchedEffect
+        val bars = WindowCompat.getInsetsController(window, view)
+        if (focusing) {
+            bars.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            bars.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            bars.show(WindowInsetsCompat.Type.systemBars())
+        }
     }
     val overlay = state.overlays.lastOrNull()
     Box(Modifier.fillMaxSize()) {
         Scaffold(
             bottomBar = {
-                NavigationBar {
+                if (!focusing) NavigationBar {
                     tabItem(state, Tab.Read, "Read", SbIcons.Book)
                     tabItem(state, Tab.Search, "Search", SbIcons.Search)
                     tabItem(state, Tab.Library, "Library", SbIcons.Bookmark)
