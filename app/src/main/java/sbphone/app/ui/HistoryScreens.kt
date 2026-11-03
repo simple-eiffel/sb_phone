@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.cos
 import sbphone.app.data.Area
 import sbphone.app.data.TlEvent
+import sbphone.app.speech.Speech
 
 /** An astronomical year as people write it: 1300 BC, AD 14. */
 fun yearLabel(y: Int): String = when {
@@ -64,7 +65,13 @@ fun TimelineScreen(state: AppState) {
     var lane by remember { mutableStateOf<String?>(null) }
     val lanes = loadOnIo(Unit) { state.bible.lanes() }
     val events = loadOnIo(lane) { state.bible.events(lane) }
-    OverlayScaffold(title = "Timeline", onBack = { state.back() }, actions = { TextButton(onClick = { state.open(Overlay.Atlas(-1000, null)) }) { Text("Map") } }) { padding ->
+    OverlayScaffold(title = "Timeline", onBack = { state.back() }, actions = {
+        SpeakButton(state, "timeline:$lane", "Timeline") {
+            listOf(Speech("A draft timeline. Every event is marked draft or to confirm.", label = "Draft")) +
+                state.bible.events(lane).map { e -> Speech("${e.label}. ${e.title}.", label = e.label + " · " + e.title) }
+        }
+        TextButton(onClick = { state.open(Overlay.Atlas(-1000, null)) }) { Text("Map") }
+    }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
                 FilterChip(selected = lane == null, onClick = { lane = null }, label = { Text("All") }, modifier = Modifier.padding(end = 6.dp))
@@ -101,7 +108,16 @@ private fun EventRow(state: AppState, e: TlEvent, lane: String) {
 @Composable
 fun TimelineEventScreen(state: AppState, id: String) {
     val data = loadOnIo(id) { Triple(state.bible.events().firstOrNull { it.id == id }, state.bible.claims(id), state.bible.places(id)) }
-    OverlayScaffold(title = data?.first?.title ?: "", onBack = { state.back() }) { padding ->
+    OverlayScaffold(title = data?.first?.title ?: "", onBack = { state.back() }, actions = {
+        val ev = data?.first
+        if (ev != null) SpeakButton(state, "event:$id", ev.title) {
+            listOf(Speech("${ev.title}. ${ev.label}. Draft, not yet confirmed. ${ev.summary}", label = ev.title), Speech("The dating.", label = "The dating")) +
+                data?.second.orEmpty().map { c ->
+                    Speech(listOf(c.label + if (c.lean) ", preferred" else "", if (c.basis.isNotBlank()) "Basis: ${c.basis}" else "", c.chronology, c.heldBy, c.note, c.citation)
+                        .filter { it.isNotBlank() }.joinToString(". "), label = c.label)
+                }
+        }
+    }) { padding ->
         val (e, claims, places) = data ?: run { Loading(Modifier.padding(padding)); return@OverlayScaffold }
         if (e == null) { Empty("Not found.", Modifier.padding(padding)); return@OverlayScaffold }
         val link = SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline)
@@ -179,7 +195,13 @@ fun AtlasScreen(state: AppState, startYear: Int, focusPlace: String?) {
     val waterColor = if (dark) Color(0xFF101C2B) else Color(0xFFC9DCEB)
     val labelColor = MaterialTheme.colorScheme.onBackground
     val dotColor = MaterialTheme.colorScheme.primary
-    OverlayScaffold(title = "Empires · ${yearLabel(year)}", onBack = { state.back() }) { padding ->
+    OverlayScaffold(title = "Empires · ${yearLabel(year)}", onBack = { state.back() }, actions = {
+        SpeakButton(state, "atlas:$year", "Empires · ${yearLabel(year)}") {
+            val list = state.bible.areas(year).distinctBy { it.name }
+            listOf(Speech("In ${yearLabel(year)}, ${list.size} outlines.", label = yearLabel(year))) +
+                list.map { a -> Speech("${a.name}, ${yearLabel(a.yearFrom)} to ${yearLabel(a.yearTo)}.", label = a.name) }
+        }
+    }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             Box(Modifier.weight(1f).fillMaxWidth().clipToBounds().background(waterColor)) {
                 Canvas(

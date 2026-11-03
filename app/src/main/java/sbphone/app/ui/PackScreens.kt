@@ -3,12 +3,15 @@ package sbphone.app.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -17,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import sbphone.app.data.PackDb
 import sbphone.app.data.PackDoc
 import sbphone.app.data.PackHit
+import sbphone.app.speech.Speech
 
 /** Names for document kinds, in the order shown. */
 private val kindNames = linkedMapOf(
@@ -60,7 +65,15 @@ fun PackHomeScreen(state: AppState, file: String) {
     var query by remember { mutableStateOf("") }
     var submitted by remember { mutableStateOf("") }
     var kind by remember { mutableStateOf<String?>(null) }
-    OverlayScaffold(title = pack.title, onBack = { if (kind != null) kind = null else state.back() }) { padding ->
+    OverlayScaffold(title = pack.title, onBack = { if (kind != null) kind = null else state.back() }, actions = {
+        SpeakButton(state, "pack:$file:$submitted:$kind", pack.title) {
+            when {
+                submitted.isNotBlank() -> pack.search(submitted).map { h -> Speech(h.doc.title + ". " + plain(h.excerpt), label = h.doc.title) }
+                kind == null -> pack.kinds().map { (k, n) -> Speech("${kindName(k)}, $n.", label = kindName(k)) }
+                else -> pack.docs(kind!!).map { d -> Speech(d.title + if (d.status.isNotBlank() && d.status != "unmarked") ", ${d.status}." else ".", label = d.title) }
+            }
+        }
+    }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             OutlinedTextField(
                 value = query, onValueChange = { query = it }, singleLine = true, label = { Text("Search ${pack.title}") },
@@ -139,12 +152,27 @@ fun HitList(state: AppState, pack: PackDb, hits: List<PackHit>) {
 fun PackDocumentScreen(state: AppState, file: String, id: Long) {
     val pack = state.packs.firstOrNull { it.file.name == file } ?: run { state.back(); return }
     val data = loadOnIo(file, id) { pack.doc(id) to pack.body(id) }
-    OverlayScaffold(title = data?.first?.title ?: "", onBack = { state.back() }) { padding ->
+    OverlayScaffold(title = data?.first?.title ?: "", onBack = { state.back() }, actions = {
+        val d = data?.first
+        if (d != null) SpeakButton(state, "doc:$file:$id", d.title) {
+            listOf(Speech(d.title + ". " + kindName(d.kind) + if (d.status.isNotBlank() && d.status != "unmarked") ", ${d.status}." else ".", label = d.title)) +
+                markdownBlocks(data?.second.orEmpty()).mapIndexed { i, b -> Speech(b.text, tag = DocTag(file, id, i), label = if (b.kind == 'h') b.text else d.title) }
+        }
+    }) { padding ->
         val (doc, body) = data ?: run { Loading(Modifier.padding(padding)); return@OverlayScaffold }
         if (doc == null) { Empty("This document is not in the pack.", Modifier.padding(padding)); return@OverlayScaffold }
         val linkStyle = SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline)
         val blocks = remember(id) { markdownBlocks(body) }
-        LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
+        val list = rememberLazyListState()
+        val reading = (state.speaker.nowTag as? DocTag)?.takeIf { it.file == file && it.id == id }?.index ?: -1
+        LaunchedEffect(reading) {
+            if (reading < 0) return@LaunchedEffect
+            val item = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == reading + 1 }
+            val fits = item != null && item.offset >= list.layoutInfo.viewportStartOffset && item.offset + item.size <= list.layoutInfo.viewportEndOffset
+            if (!fits) list.animateScrollToItem(reading + 1)
+        }
+        val readBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), state = list) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
                     Text(kindName(doc.kind) + if (doc.collection.isNotBlank()) " · ${doc.collection}" else "", style = MaterialTheme.typography.labelLarge,
@@ -154,7 +182,8 @@ fun PackDocumentScreen(state: AppState, file: String, id: Long) {
                 if (doc.status == "withdrawn") Text("Withdrawn: kept for the record, not to be taken as current.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp))
             }
-            items(blocks) { b ->
+            itemsIndexed(blocks) { i, b ->
+                Box(Modifier.fillMaxWidth().background(if (i == reading) readBg else androidx.compose.ui.graphics.Color.Transparent)) {
                 when (b.kind) {
                     'h' -> Text(b.text, style = if (b.level <= 1) MaterialTheme.typography.headlineSmall else if (b.level == 2) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 14.dp, bottom = 4.dp))
@@ -162,6 +191,7 @@ fun PackDocumentScreen(state: AppState, file: String, id: Long) {
                         modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp).background(MaterialTheme.colorScheme.surfaceContainerLow).padding(8.dp))
                     'l' -> Text(linkRefs("•  " + b.text, linkStyle) { state.goTo(it) }, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 8.dp, top = 2.dp))
                     else -> Text(linkRefs(b.text, linkStyle) { state.goTo(it) }, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 4.dp))
+                }
                 }
             }
             item { Text(doc.path, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 24.dp)) }
@@ -177,6 +207,12 @@ fun MineTab(state: AppState, key: Int) {
         hits == null -> Loading()
         hits.isEmpty() -> Empty("Nothing in your materials covers or cites this verse.")
         else -> LazyColumn(Modifier.fillMaxSize()) {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${hits.size} in your materials", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.weight(1f).padding(start = 20.dp))
+                    SpeakButton(state, "mine:$key", "Mine · " + sbphone.fold.Ref.fromKey(key).label()) { hits.map { (_, h) -> Speech(h.doc.title + ". " + plain(h.excerpt), label = h.doc.title) } }
+                }
+            }
             items(hits, key = { (p, h) -> p.file.name + h.doc.id }) { (p, h) ->
                 Text(kindName(h.doc.kind) + if (h.doc.collection.isNotBlank()) " · " + h.doc.collection else "", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(start = 20.dp, top = 8.dp))
@@ -219,3 +255,6 @@ fun plain(s: String): String = s
     .replace(Regex("""\[([^\]]+)]\([^)]*\)"""), "$1")
     .replace("**", "").replace("__", "").replace("`", "")
     .replace(Regex("""(?<![\w*])\*(?!\s)([^*]+)(?<!\s)\*(?![\w*])"""), "$1")
+
+/** Marks the paragraph of a pack document being read aloud. */
+data class DocTag(val file: String, val id: Long, val index: Int)

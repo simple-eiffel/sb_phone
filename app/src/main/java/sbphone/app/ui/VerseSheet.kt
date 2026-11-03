@@ -71,7 +71,7 @@ fun VerseSheet(state: AppState, key: Int, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f).navigationBarsPadding()) {
             Text(ref.label(), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 20.dp))
-            VerseActions(state, key, onNote = { onDismiss(); state.open(Overlay.NoteEdit(key)) })
+            VerseActions(state, key, tab, onNote = { onDismiss(); state.open(Overlay.NoteEdit(key)) }, onReadOn = { onDismiss(); readChapter(state, state.bible.pageOf(ref.book, ref.chapter), key) })
             val labels = listOf("Original", "Cross-refs", "Compare") + if (state.packs.isNotEmpty()) listOf("Mine") else emptyList()
             PrimaryTabRow(selectedTabIndex = tab.coerceAtMost(labels.lastIndex)) {
                 labels.forEachIndexed { i, l -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(l, maxLines = 1) }) }
@@ -89,7 +89,7 @@ fun VerseSheet(state: AppState, key: Int, onDismiss: () -> Unit) {
 private data class VerseMarks(val highlight: sbphone.app.data.Highlight?, val starred: Boolean, val tagged: Int, val card: Boolean)
 
 @Composable
-private fun VerseActions(state: AppState, key: Int, onNote: () -> Unit) {
+private fun VerseActions(state: AppState, key: Int, tab: Int, onNote: () -> Unit, onReadOn: () -> Unit) {
     val context = LocalContext.current
     val marks = loadOnIo(state.userRevision, key) {
         VerseMarks(state.user.highlight(key), state.user.starredKeys().contains(key), state.user.tagsOf(key).size, state.user.hasCard(key))
@@ -104,7 +104,7 @@ private fun VerseActions(state: AppState, key: Int, onNote: () -> Unit) {
         for (i in highlightNames.indices) {
             val chosen = marks?.highlight?.color == i
             Box(
-                Modifier.padding(4.dp).size(28.dp).background(highlightColor(i, dark).copy(alpha = 0.9f), CircleShape)
+                Modifier.padding(3.dp).size(28.dp).background(highlightColor(i, dark).copy(alpha = 0.9f), CircleShape)
                     .border(if (chosen) 2.dp else 0.dp, if (chosen) MaterialTheme.colorScheme.onSurface else Color.Transparent, CircleShape)
                     .clickable { state.user.setHighlight(key, if (chosen) null else i); state.touched() },
             )
@@ -117,6 +117,7 @@ private fun VerseActions(state: AppState, key: Int, onNote: () -> Unit) {
             Icon(if (marks?.starred == true) SbIcons.Star else SbIcons.StarOutline, contentDescription = "Favorite", tint = if (marks?.starred == true) MaterialTheme.colorScheme.primary else LocalContentColor.current)
         }
         IconButton(onClick = onNote) { Icon(SbIcons.Note, contentDescription = "Note") }
+        SpeakButton(state, "sheet:$key:$tab", Ref.fromKey(key).label()) { sheetSpeech(state, key, tab) }
         Box {
             IconButton(onClick = { menu = true }) { Icon(SbIcons.MoreVert, contentDescription = "More actions") }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -129,6 +130,7 @@ private fun VerseActions(state: AppState, key: Int, onNote: () -> Unit) {
                         if (marks?.card != true) { state.user.addCard(key); state.touched(); Toast.makeText(context, "Added to memory cards", Toast.LENGTH_SHORT).show() }
                     },
                 )
+                DropdownMenuItem(text = { Text("Read the chapter aloud from here") }, onClick = { menu = false; onReadOn() })
                 DropdownMenuItem(text = { Text("Copy with credit") }, onClick = { menu = false; copyVerse(context, state, key, share = false) })
                 DropdownMenuItem(text = { Text("Share…") }, onClick = { menu = false; copyVerse(context, state, key, share = true) })
             }
@@ -265,4 +267,30 @@ private fun Compare(state: AppState, key: Int) {
 fun SourceLine(text: String) {
     Text("Source: $text", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+}
+
+/** What the open tab of the verse sheet shows, to be read aloud. */
+private fun sheetSpeech(state: AppState, key: Int, tab: Int): List<sbphone.app.speech.Speech> {
+    val bible = state.bible
+    val ref = Ref.fromKey(key)
+    return when (tab) {
+        0 -> buildList {
+            add(verseSpeech(state, key, "KJV", spokenRef(key) + ", King James Version. "))
+            val words = bible.words(key)
+            if (words.isNotEmpty()) add(sbphone.app.speech.Speech("The ${if (ref.book <= 39) "Hebrew" else "Greek"} words.", label = "Original words"))
+            // Each word in its own voice, then its English gloss.
+            for (w in words) add(sbphone.app.speech.Speech("${w.surface} . ${w.gloss}", label = "${spokenTranslit(w.translit)}  ·  ${w.gloss}"))
+        }
+        1 -> bible.xrefs(key).map { x ->
+            val r = x.ref()
+            sbphone.app.speech.Speech(r.spoken() + ". " + bible.previewText(r, state.version), langOf(bible.version(state.version)), label = r.label())
+        }
+        2 -> bible.versesAt(key).groupBy { it.version }.map { (code, vs) ->
+            val v = bible.version(code)
+            sbphone.app.speech.Speech(v.name + ". " + vs.joinToString(" ") { it.text.ifEmpty { "omitted in this edition." } }, langOf(v), label = code)
+        }
+        else -> state.packs.flatMap { p -> p.forVerse(key) }.map { h ->
+            sbphone.app.speech.Speech(h.doc.title + ". " + plain(h.excerpt), label = h.doc.title)
+        }
+    }
 }

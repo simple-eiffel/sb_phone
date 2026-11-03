@@ -41,7 +41,9 @@ private val thenSources = listOf("BLOUNT1661", "WRIGHT1884-QUOTING-BACON1604", "
 fun EnglishScreen(state: AppState, word: String) {
     val fold = Fold.fold(word)
     val entry = loadOnIo(fold) { state.bible.englishEntry(fold) }
-    OverlayScaffold(title = entry?.lemma ?: word, onBack = { state.back() }) { padding ->
+    OverlayScaffold(title = entry?.lemma ?: word, onBack = { state.back() }, actions = {
+        if (entry != null) SpeakButton(state, "english:$fold", entry.lemma) { englishSpeech(state, entry) }
+    }) { padding ->
         if (entry == null) { Loading(Modifier.padding(padding)); return@OverlayScaffold }
         val behind = entry.behind
         val shifts = entry.shifts
@@ -206,3 +208,30 @@ fun kjvTappable(engKey: Int, text: String, linked: Set<Pair<String, Int>>, shift
         }
         append(text.substring(last))
     }
+
+/** The English word page read aloud: the words behind it, what it meant then, what it means today. */
+private fun englishSpeech(state: AppState, e: sbphone.app.data.EnglishEntry): List<sbphone.app.speech.Speech> = buildList {
+    val S = { text: String, label: String -> sbphone.app.speech.Speech(text, label = label) }
+    add(S(e.lemma + if (e.forms.size > 1) ". In the King James Version as: " + e.forms.joinToString(", ") + "." else ".", e.lemma))
+    if (e.behind.isNotEmpty()) {
+        add(S("The Hebrew and Greek behind it.", "Behind it"))
+        for (b in e.behind) add(S("${b.lemma.headword} . ${spokenTranslit(b.lemma.translit)}${if (b.lemma.hint.isNotBlank()) ", " + b.lemma.hint else ""}. ${b.n} places.", b.lemma.translit))
+    }
+    val then = e.senses.filter { it.source in thenSources }
+    if (then.isNotEmpty() || e.shifts.isNotEmpty()) add(S("What it meant then.", "What it meant then"))
+    if (e.shifts.isNotEmpty()) add(S("Wright's Bible Word-Book, 1884, lists ${e.lemma} among the words whose meaning has changed since the King James Version, at " +
+        e.shifts.joinToString("; ") { spokenRef(it) } + ".", "Wright 1884"))
+    for ((source, list) in then.groupBy { it.source }) {
+        val name = state.bible.source(source)?.name ?: source
+        add(S("$name.", name))
+        for (s in list) add(S((if (s.senseNo.isNotBlank()) "${s.senseNo}. " else "") + s.text, name))
+    }
+    val today = e.senses.filter { it.source == "OEWN2025" }
+    if (today.isNotEmpty()) {
+        add(S("What it means today.", "What it means today"))
+        for ((pos, list) in today.groupBy { it.pos }) {
+            add(S(partOfSpeech(pos) + ".", partOfSpeech(pos)))
+            list.forEachIndexed { i, s -> add(S("${i + 1}. ${s.text}", partOfSpeech(pos))) }
+        }
+    }
+}

@@ -32,4 +32,10 @@ object SbIcons {
     val MoreVert = icon("more_vert", "M12,8c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM12,10c-1.1,0 -2,0.9 -2,2s0.9,2 2,2 2,-0.9 2,-2 -0.9,-2 -2,-2zM12,16c-1.1,0 -2,0.9 -2,2s0.9,2 2,2 2,-0.9 2,-2 -0.9,-2 -2,-2z")
     val Add = icon("add", "M19,13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z")
     val Close = icon("close", "M19,6.41L17.59,5 12,10.59 6.41,5 5,6.41 10.59,12 5,17.59 6.41,19 12,13.41 17.59,19 19,17.59 13.41,12z")
+    val Speaker = icon("volume_up", "M3,9v6h4l5,5V4L7,9H3zM16.5,12c0,-1.77 -1.02,-3.29 -2.5,-4.03v8.05c1.48,-0.73 2.5,-2.25 2.5,-4.02zM14,3.23v2.06c2.89,0.86 5,3.54 5,6.71s-2.11,5.85 -5,6.71v2.06c4.01,-0.91 7,-4.49 7,-8.77s-2.99,-7.86 -7,-8.77z")
+    val Stop = icon("stop", "M6,6h12v12H6z")
+    val Play = icon("play", "M8,5v14l11,-7z")
+    val Pause = icon("pause", "M6,19h4V5H6v14zM14,5v14h4V5h-4z")
+    val SkipNext = icon("skip_next", "M6,18l8.5,-6L6,6v12zM16,6v12h2V6h-2z")
+    val SkipPrevious = icon("skip_previous", "M6,6h2v12H6zM9.5,12l8.5,6V6z")
 }

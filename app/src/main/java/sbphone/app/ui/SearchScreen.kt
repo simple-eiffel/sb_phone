@@ -2,6 +2,7 @@ package sbphone.app.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -155,7 +156,15 @@ private fun Results(state: AppState, found: Outcome.Found) {
                 val r = found.result
                 val shownIn = if (r.byVerse) "  ·  shown in ${r.verses.firstOrNull()?.version ?: state.version}" else ""
                 val first = if (r.byVerse) r.verses.distinctBy { it.engKey }.size else r.verses.size
-                Label(if (r.total == 0) "No verses found" else if (first < r.total) "${r.total} verses (first $first shown)$shownIn" else "${r.total} verses$shownIn")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { Label(if (r.total == 0) "No verses found" else if (first < r.total) "${r.total} verses (first $first shown)$shownIn" else "${r.total} verses$shownIn") }
+                    if (r.verses.isNotEmpty()) SpeakButton(state, "search:" + state.searchText, "Search: " + state.searchText) {
+                        r.verses.map { v ->
+                            val ver = state.bible.version(v.version)
+                            sbphone.app.speech.Speech(spokenRef(v.engKey) + ". " + v.text, langOf(ver), label = Ref.fromKey(v.engKey).shortLabel() + " · " + v.version)
+                        }
+                    }
+                }
             }
             items(found.result.verses, key = { it.id }) { v ->
                 val ref = Ref(v.book, v.chapter, v.verse)

@@ -59,6 +59,11 @@ fun ReaderScreen(state: AppState) {
 
     LaunchedEffect(pager.settledPage) { if (pager.settledPage != state.page) state.turnTo(pager.settledPage) }
     LaunchedEffect(state.page) { if (pager.currentPage != state.page) pager.scrollToPage(state.page) }
+    // Reading aloud: when it moves into another chapter, the reader turns to it.
+    val reading = state.speaker.nowTag as? VerseTag
+    LaunchedEffect(reading?.book, reading?.chapter) {
+        if (reading != null) bible.pageOf(reading.book, reading.chapter).let { if (it != state.page) state.turnTo(it) }
+    }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -72,7 +77,15 @@ fun ReaderScreen(state: AppState) {
             }
         }
         if (state.focus) {
-            // Focus reading: only a faint way back out.
+            // Focus reading: only a faint way back out, and read aloud.
+            val sp = state.speaker
+            IconButton(
+                onClick = { if (sp.active && sp.source == "reader") sp.stop() else readChapter(state, state.page) },
+                modifier = Modifier.align(Alignment.BottomStart).padding(16.dp)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.8f), androidx.compose.foundation.shape.CircleShape),
+            ) {
+                Icon(if (sp.active && sp.source == "reader") SbIcons.Stop else SbIcons.Speaker, contentDescription = "Read aloud", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             IconButton(
                 onClick = { state.focus = false },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
@@ -111,11 +124,16 @@ private fun ReaderBar(state: AppState) {
                 }
             }
         }
-        IconButton(onClick = { state.toggleParallel() }) {
+        IconButton(onClick = { state.toggleParallel() }, modifier = Modifier.size(40.dp)) {
             Icon(SbIcons.Columns, contentDescription = if (state.parallelOn) "Parallel on" else "Parallel off",
                 tint = if (state.parallelOn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        IconButton(onClick = { state.focus = true }) { Icon(SbIcons.Fullscreen, contentDescription = "Focus reading", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+        val sp = state.speaker
+        IconButton(onClick = { if (sp.active && sp.source == "reader") sp.stop() else readChapter(state, state.page) }, modifier = Modifier.size(40.dp)) {
+            Icon(if (sp.active && sp.source == "reader") SbIcons.Stop else SbIcons.Speaker, contentDescription = if (sp.active && sp.source == "reader") "Stop reading aloud" else "Read this chapter aloud",
+                tint = if (sp.active && sp.source == "reader") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        IconButton(onClick = { state.focus = true }, modifier = Modifier.size(40.dp)) { Icon(SbIcons.Fullscreen, contentDescription = "Focus reading", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 
@@ -151,6 +169,17 @@ private fun ChapterPage(state: AppState, book: Int, chapter: Int, onVerse: (Int)
             flash = 0
         }
     }
+    // The verse being read aloud is marked, and kept in view.
+    val readKey = (state.speaker.nowTag as? VerseTag)?.takeIf { it.book == book && it.chapter == chapter }?.key ?: 0
+    LaunchedEffect(readKey, rows) {
+        if (readKey == 0) return@LaunchedEffect
+        val index = rows.indexOfFirst { it.key == readKey }
+        if (index < 0) return@LaunchedEffect
+        val visible = list.layoutInfo.visibleItemsInfo
+        val item = visible.firstOrNull { it.index == index + 1 }
+        val fits = item != null && item.offset >= list.layoutInfo.viewportStartOffset && item.offset + item.size <= list.layoutInfo.viewportEndOffset
+        if (!fits) list.animateScrollToItem(index + 1)
+    }
     val dark = isDark(state.theme)
     val base = baseSize(state.textScale)
     LazyColumn(state = list, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -163,6 +192,7 @@ private fun ChapterPage(state: AppState, book: Int, chapter: Int, onVerse: (Int)
             val hl = marks?.first?.get(row.key)
             val target = when {
                 flash == row.key -> MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                readKey == row.key -> MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
                 hl != null -> highlightColor(hl, dark)
                 else -> Color.Transparent
             }

@@ -95,3 +95,7 @@ One folding routine (`fold`) is used both when the search index is built and whe
 - A signed release APK, sideloaded onto the S21 (Settings, then allow installs from this source). The signing key lives outside the repo.
 - Target size: under 150 MB installed.
 - Google Play publishing is a later decision.
+
+## Read aloud (0.6.0, 2026-11-03)
+
+Every screen carries a speaker button that reads what that screen shows; the reader reads the chapter verse by verse (marking and following the verse) and goes on into the next chapter. A bar at the bottom gives back, pause, next and stop. It uses the phone's own text-to-speech engines and only voices installed on the phone (never one that needs the network), so the no-network promise holds; the manifest gains a `<queries>` entry for the TTS service, which is not a permission. Hebrew and Greek script are found in the text and sent to a Hebrew or Greek voice (modern pronunciation, said so in Settings); the Vulgate uses a Latin voice, or Italian. A phone call or other audio pauses it. Tested on the emulator with the eSpeak NG engine (installed on the emulator only).

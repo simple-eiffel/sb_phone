@@ -8,7 +8,14 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -45,7 +52,14 @@ fun SbApp(state: AppState) {
         }
     }
     val overlay = state.overlays.lastOrNull()
-    Box(Modifier.fillMaxSize()) {
+    // While reading aloud the screen stays on (the phone's power button still turns it off; the reading goes on).
+    val speaking = state.speaker.active
+    DisposableEffect(speaking) {
+        view.keepScreenOn = speaking
+        onDispose { view.keepScreenOn = false }
+    }
+    Column(Modifier.fillMaxSize()) {
+    Box(Modifier.weight(1f).fillMaxWidth().then(if (speaking) Modifier.consumeWindowInsets(WindowInsets.navigationBars) else Modifier)) {
         Scaffold(
             bottomBar = {
                 if (!focusing) NavigationBar {
@@ -87,6 +101,8 @@ fun SbApp(state: AppState) {
                 }
             }
         }
+    }
+        if (speaking) PlayerBar(state, Modifier.navigationBarsPadding())
     }
 }
 

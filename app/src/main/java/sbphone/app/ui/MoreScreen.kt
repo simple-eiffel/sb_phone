@@ -34,6 +34,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import sbphone.fold.PointingLevel
+import sbphone.app.speech.Speech
 
 @Composable
 fun MoreScreen(state: AppState) {
@@ -136,6 +137,8 @@ fun SettingsScreen(state: AppState) {
             Text("Full shows the accents (cantillation) too; Vowels drops them; Consonants shows the letters alone.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
 
+            ReadAloudSettings(state)
+
             Text("Parallel versions (up to three)", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 24.dp))
             Text("Shown under the main version when the columns button in the reader is on.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             for (v in state.bible.versions) {
@@ -158,7 +161,11 @@ fun SettingsScreen(state: AppState) {
 fun CreditsScreen(state: AppState) {
     val context = LocalContext.current
     val fontLicense = loadOnIo(Unit) { context.assets.open("licenses/EzraSIL-license.txt").use { it.readBytes().decodeToString() } }
-    OverlayScaffold(title = "Credits and licenses", onBack = { state.back() }) { padding ->
+    OverlayScaffold(title = "Credits and licenses", onBack = { state.back() }, actions = {
+        SpeakButton(state, "credits", "Credits and licenses") {
+            state.bible.sources.map { s -> Speech("${s.name}. ${s.license}. ${s.credit}", label = s.name) }
+        }
+    }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding)) {
             item {
                 Text("Every text and dataset in this app is listed here with its license. Texts under share-alike licenses may be shared on the same terms.",
@@ -188,17 +195,12 @@ fun CreditsScreen(state: AppState) {
 
 @Composable
 fun AboutScreen(state: AppState) {
-    OverlayScaffold(title = "About", onBack = { state.back() }) { padding ->
+    val points = aboutPoints
+    OverlayScaffold(title = "About", onBack = { state.back() }, actions = {
+        SpeakButton(state, "about", "About") { listOf(Speech(aboutLead, label = "About")) + points.map { (h, b) -> Speech("$h $b", label = h) } }
+    }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(20.dp).verticalScroll(rememberScrollState())) {
-            Text("A free Bible-study app that checks what is said about the Bible against the Bible itself.", style = MaterialTheme.typography.titleMedium)
-            val points = listOf(
-                "Every fact shows its source." to "Each word tag, dictionary entry and cross-reference names where it came from and its license.",
-                "No network." to "This app has no permission to use the internet. It cannot send anything anywhere.",
-                "No ads, accounts or tracking." to "Nothing to sign in to, nothing to buy, nothing counted.",
-                "No AI." to "Everything shown was built ahead of time from sourced data.",
-                "Your notes stay yours." to "They live only on this phone. Export them to a file whenever you like.",
-                "Public texts only." to "Only texts whose licenses allow sharing are included, and each is credited.",
-            )
+            Text(aboutLead, style = MaterialTheme.typography.titleMedium)
             for ((head, body) in points) {
                 Text(head, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 16.dp))
                 Text(body, style = MaterialTheme.typography.bodyMedium)
@@ -206,5 +208,58 @@ fun AboutScreen(state: AppState) {
             Text("Verse numbers follow the English (KJV) numbering. Where the Hebrew numbering differs, the Hebrew number is shown in brackets.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 24.dp))
         }
+    }
+}
+
+private const val aboutLead = "A free Bible-study app that checks what is said about the Bible against the Bible itself."
+
+private val aboutPoints = listOf(
+                "Every fact shows its source." to "Each word tag, dictionary entry and cross-reference names where it came from and its license.",
+                "No network." to "This app has no permission to use the internet. It cannot send anything anywhere.",
+                "No ads, accounts or tracking." to "Nothing to sign in to, nothing to buy, nothing counted.",
+                "No AI." to "Everything shown was built ahead of time from sourced data.",
+                "Your notes stay yours." to "They live only on this phone. Export them to a file whenever you like.",
+                "Public texts only." to "Only texts whose licenses allow sharing are included, and each is credited.",
+                "Read aloud." to "Uses the phone's own text-to-speech voices, and only voices installed on the phone. The words go to the phone's speech engine and nowhere else.",
+            )
+
+@Composable
+private fun ReadAloudSettings(state: AppState) {
+    val context = LocalContext.current
+    val sp = state.speaker
+    androidx.compose.runtime.LaunchedEffect(Unit) { sp.checkVoices() }
+    Text("Read aloud", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 24.dp))
+    Text("Every screen has a speaker button that reads that screen. In the reader it reads the chapter and goes on into the next.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text("Speed: " + "%.2f".format(state.speechRate).trimEnd('0').trimEnd('.') + "×", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+    Slider(value = state.speechRate, onValueChange = { state.chooseSpeechRate((it * 20).toInt() / 20f) }, valueRange = 0.5f..2.0f, steps = 29)
+    Row(Modifier.fillMaxWidth().clickable { state.chooseSayVerseNumbers(!state.sayVerseNumbers) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.Switch(checked = state.sayVerseNumbers, onCheckedChange = { state.chooseSayVerseNumbers(it) })
+        Text("Say verse numbers", modifier = Modifier.padding(start = 12.dp))
+    }
+    Row(Modifier.fillMaxWidth().clickable { state.chooseReadOn(!state.readOn) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.Switch(checked = state.readOn, onCheckedChange = { state.chooseReadOn(it) })
+        Text("Go on into the next chapter", modifier = Modifier.padding(start = 12.dp))
+    }
+    Text("Voices on this phone", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+    Text(sp.voiceReport ?: "Checking…", style = MaterialTheme.typography.bodySmall)
+    Text("Hebrew and Greek are read with modern Israeli and Greek voices: a help for hearing the words, not a reconstruction of how they were said. " +
+        "To add a voice, open the phone's speech settings, choose an engine (Google's has Hebrew and Greek), then its settings → Install voice data.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+    Row {
+        TextButton(onClick = {
+            sp.read("test") {
+                sbphone.app.speech.Batch("Testing the voices", listOf(
+                    Speech("In the beginning God created the heaven and the earth.", label = "English"),
+                    Speech("בְּרֵאשִׁית בָּרָא אֱלֹהִים אֵת הַשָּׁמַיִם וְאֵת הָאָרֶץ", label = "Hebrew"),
+                    Speech("Ἐν ἀρχῇ ἦν ὁ λόγος", label = "Greek"),
+                    Speech("In principio erat Verbum", sbphone.app.speech.Lang.La, label = "Latin"),
+                ))
+            }
+        }) { Text("Test the voices") }
+        TextButton(onClick = {
+            runCatching { context.startActivity(android.content.Intent("com.android.settings.TTS_SETTINGS").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                .onFailure { Toast.makeText(context, "Open the phone's Settings and search for “text-to-speech”.", Toast.LENGTH_LONG).show() }
+        }) { Text("Phone's speech settings") }
     }
 }

@@ -36,6 +36,7 @@ import kotlinx.coroutines.withContext
 import sbphone.app.data.AppDb
 import sbphone.app.data.UserDb
 import sbphone.app.data.PackDb
+import sbphone.app.speech.Speaker
 import sbphone.app.ui.AppState
 import sbphone.app.ui.SbApp
 import sbphone.app.ui.SbTheme
@@ -46,6 +47,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent { Root() }
+    }
+
+    override fun onDestroy() {
+        // Leaving the app with Back ends any reading aloud; turning the screen off or switching apps does not.
+        if (isFinishing) Holder.state?.speaker?.stop()
+        super.onDestroy()
     }
 }
 
@@ -63,7 +70,7 @@ private fun Root() {
             try {
                 val s = withContext(Dispatchers.IO) {
                     val bible = AppDb.open(context) { p -> progress = p }
-                    AppState(bible, UserDb(context), PackDb.openAll(context))
+                    AppState(bible, UserDb(context), PackDb.openAll(context), Speaker(context))
                 }
                 Holder.state = s
                 state = s

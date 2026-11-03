@@ -5,6 +5,16 @@
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!--
+      Not a permission: this only lets the app see the phone's own text-to-speech engines,
+      for Read aloud. Reading aloud uses voices installed on the phone.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

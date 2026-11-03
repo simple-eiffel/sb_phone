@@ -45,7 +45,9 @@ fun WordScreen(state: AppState, lemmaId: Int) {
         val lemma = bible.lemma(lemmaId)
         if (lemma == null) null else WordData(lemma, bible.renderings(lemmaId), bible.senses(lemmaId), bible.occurrences(lemmaId))
     }
-    OverlayScaffold(title = data?.lemma?.headword ?: "Word", onBack = { state.back() }) { padding ->
+    OverlayScaffold(title = data?.lemma?.headword ?: "Word", onBack = { state.back() }, actions = {
+        if (data != null) SpeakButton(state, "word:$lemmaId", data.lemma.headword) { wordSpeech(state, data) }
+    }) { padding ->
         if (data == null) { Loading(Modifier.padding(padding)); return@OverlayScaffold }
         val lemma = data.lemma
         var shown by remember(lemmaId) { mutableIntStateOf(50) }
@@ -140,5 +142,31 @@ private fun SenseRow(s: Sense) {
         if (s.text.isNotBlank() && !repeats) Text(s.text, style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp))
         if (s.domain.isNotBlank()) Text(s.domain, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
         if (s.note.isNotBlank()) Text(s.note.replace("|", "\n"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** The word page read aloud: heading, the KJV's renderings, each dictionary in turn, then the places. */
+private fun wordSpeech(state: AppState, data: WordData): List<sbphone.app.speech.Speech> = buildList {
+    val bible = state.bible
+    val l = data.lemma
+    val order = if (l.isHebrew) hebrewOrder else greekOrder
+    add(sbphone.app.speech.Speech("${l.headword} . ${spokenTranslit(l.translit)}. ${l.languageName}${if (l.pos.isNotBlank()) ", " + l.pos else ""}. " +
+        "Occurs ${l.count} times.", label = l.headword))
+    if (data.renderings.isNotEmpty()) add(sbphone.app.speech.Speech("The King James Version renders it: " +
+        data.renderings.take(24).joinToString(", ") { "${it.english}, ${it.n}" } + ".", label = "How the KJV renders it"))
+    for ((source, senses) in data.senses.groupBy { it.source }.toList().sortedBy { order.indexOf(it.first).let { i -> if (i < 0) 99 else i } }) {
+        val name = bible.source(source)?.name ?: source
+        add(sbphone.app.speech.Speech("$name.", label = name))
+        for (s in senses) {
+            val head = listOf(s.label, s.gloss).filter { it.isNotBlank() }.joinToString(" ")
+            val repeats = s.text.trim().trimEnd('.', ';', ',') == s.gloss.trim().trimEnd('.', ';', ',') || s.text.trim().trimEnd('.') == head.trim().trimEnd('.')
+            val text = listOf(head, if (repeats) "" else s.text).filter { it.isNotBlank() }.joinToString(". ")
+            if (text.isNotBlank()) add(sbphone.app.speech.Speech(text, label = name))
+        }
+    }
+    add(sbphone.app.speech.Speech("Every place: ${data.places.size}.", label = "Every place"))
+    for ((key, gloss) in data.places.take(50)) {
+        val r = Ref.fromKey(key)
+        add(sbphone.app.speech.Speech("${r.spoken()}, $gloss. " + bible.previewText(r, state.version), langOf(bible.version(state.version)), label = r.label()))
     }
 }

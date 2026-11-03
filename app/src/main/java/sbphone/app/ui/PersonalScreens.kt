@@ -56,6 +56,8 @@ import java.text.DateFormat
 import java.util.Date
 import sbphone.app.data.Card
 import sbphone.app.data.Prayer
+import sbphone.app.speech.Batch
+import sbphone.app.speech.Speech
 import sbphone.fold.Ref
 import sbphone.fold.RefParse
 import sbphone.fold.RefParser
@@ -155,7 +157,10 @@ fun TagVersesScreen(state: AppState, tag: Long, name: String) {
         confirmButton = { TextButton(onClick = { state.user.deleteTag(tag); state.touched(); confirmDelete = false; state.back() }) { Text("Delete tag") } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Keep") } },
     )
-    OverlayScaffold(title = "Tag · $name", onBack = { state.back() }, actions = { TextButton(onClick = { confirmDelete = true }) { Text("Delete tag") } }) { padding ->
+    OverlayScaffold(title = "Tag · $name", onBack = { state.back() }, actions = {
+        SpeakButton(state, "tag:$tag", "Tag · $name") { versesSpeech(state, state.user.taggedKeys(tag)) }
+        TextButton(onClick = { confirmDelete = true }) { Text("Delete tag") }
+    }) { padding ->
         when {
             items == null -> Loading(Modifier.padding(padding))
             items.isEmpty() -> Empty("No verses carry this tag.", Modifier.padding(padding))
@@ -205,6 +210,7 @@ fun JournalScreen(state: AppState, id: Long) {
         title = title.ifBlank { "Journal entry" },
         onBack = { state.back() },
         actions = {
+            SpeakButton(state, "journal:$id", title.ifBlank { "Journal entry" }) { listOf(Speech(currentTitle.ifBlank { "Journal entry" } + ".", label = "Title")) + paragraphs(currentBody) }
             TextButton(onClick = { editing = !editing; if (!editing) { state.user.saveJournal(id, title, body); state.touched() } }) { Text(if (editing) "Done" else "Edit") }
             TextButton(onClick = { state.user.saveJournal(id, title, body); state.user.setJournalDeleted(id, true); deleted = true; state.touched(); state.back() }) { Text("Delete") }
         },
@@ -234,7 +240,9 @@ fun JournalScreen(state: AppState, id: Long) {
 @Composable
 fun MemoryScreen(state: AppState) {
     var tab by remember { mutableIntStateOf(0) }
-    OverlayScaffold(title = "Memory cards", onBack = { state.back() }) { padding ->
+    OverlayScaffold(title = "Memory cards", onBack = { state.back() }, actions = {
+        if (tab == 1) SpeakButton(state, "cards", "Memory cards") { versesSpeech(state, state.user.cards().map { it.key }) }
+    }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             PrimaryTabRow(selectedTabIndex = tab) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Review") })
@@ -273,6 +281,9 @@ private fun Review(state: AppState) {
         } else {
             Text(text.orEmpty(), style = readingStyle(state.bible.version(state.version), baseSize(state.textScale)), textAlign = TextAlign.Center)
             Text(state.version, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(top = 8.dp))
+            TextButton(onClick = {
+                state.speaker.read("card:${card.id}") { Batch(ref.label(), listOf(Speech(ref.spoken() + ". " + state.bible.previewText(ref, state.version), langOf(state.bible.version(state.version)), label = ref.label()))) }
+            }) { Text("Hear it") }
             Row(Modifier.padding(top = 32.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 OutlinedButton(onClick = {
                     state.user.cardAgain(card); queue.removeAt(0); queue.add(card.copy(intervalDays = 0)); shown = false
@@ -320,6 +331,12 @@ fun PrayerScreen(state: AppState) {
     if (adding || editing != null) PrayerDialog(state, editing) { adding = false; editing = null }
     answering?.let { p -> AnswerDialog(state, p) { answering = null } }
     OverlayScaffold(title = "Prayer list", onBack = { state.back() }, actions = {
+        SpeakButton(state, "prayers:$tab", if (tab == 0) "Prayer list" else "Answered prayers") {
+            state.user.prayers(answered = tab == 1).map { p ->
+                Speech(listOf(p.title, p.details, if (p.key != 0) Ref.fromKey(p.key).spoken() + ". " + state.bible.previewText(Ref.fromKey(p.key), state.version) else "",
+                    if (p.answer.isNotBlank()) "Answered: " + p.answer else "").filter { it.isNotBlank() }.joinToString(". "), label = p.title)
+            }
+        }
         IconButton(onClick = { adding = true }) { Icon(SbIcons.Add, contentDescription = "Add a prayer") }
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
@@ -403,3 +420,7 @@ private fun AnswerDialog(state: AppState, prayer: Prayer, onDismiss: () -> Unit)
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
+
+/** Writing split into paragraphs, so Next and Back move a paragraph at a time. */
+fun paragraphs(text: String): List<Speech> =
+    text.split(Regex("\\n\\s*\\n")).map { it.trim() }.filter { it.isNotEmpty() }.mapIndexed { i, p -> Speech(p, label = "Paragraph ${i + 1}") }

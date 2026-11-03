@@ -47,8 +47,11 @@ private val tabs = listOf("Favorites", "Highlights", "Notes", "Journal", "Tags",
 fun LibraryScreen(state: AppState) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize()) {
-        PrimaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
-            tabs.forEachIndexed { i, l -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(l, maxLines = 1) }) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PrimaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp, modifier = Modifier.weight(1f)) {
+                tabs.forEachIndexed { i, l -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(l, maxLines = 1) }) }
+            }
+            SpeakButton(state, "library:$tab", "Library · ${tabs[tab]}") { librarySpeech(state, tab) }
         }
         when (tab) {
             0 -> FavoritesTab(state)
@@ -283,6 +286,9 @@ fun NoteEditScreen(state: AppState, key: Int) {
     }
     val ref = Ref.fromKey(key)
     OverlayScaffold(title = "Note · ${ref.shortLabel()}", onBack = { state.back() }, actions = {
+        SpeakButton(state, "note:$key", "Note · ${ref.shortLabel()}") {
+            listOf(verseSpeech(state, key, state.version), sbphone.app.speech.Speech("Your note. $current", label = "Your note"))
+        }
         TextButton(onClick = { state.goTo(ref) }) { Text("Open verse") }
         if (initial.isNotEmpty()) TextButton(onClick = { state.user.saveNote(key, ""); deleted = true; state.back() }) { Text("Delete") }
     }) { padding ->
@@ -293,5 +299,27 @@ fun NoteEditScreen(state: AppState, key: Int) {
             Text("Saved when you leave this page. Earlier versions are kept. A deleted note can be restored from Library → Notes.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
         }
+    }
+}
+
+/** A Library tab read aloud, in the order it is listed. */
+private fun librarySpeech(state: AppState, tab: Int): List<sbphone.app.speech.Speech> {
+    val u = state.user
+    val S = { text: String, label: String -> sbphone.app.speech.Speech(text, label = label) }
+    return when (tab) {
+        0 -> u.folders().flatMap { f ->
+            listOf(S("Folder: ${f.name}, ${f.count}.", f.name)) + u.favorites(f.id).map { fav ->
+                val r = Ref.fromKey(fav.key)
+                if (fav.wholeChapter) S(Ref(r.book, r.chapter).spoken() + ", the whole chapter.", Ref(r.book, r.chapter).label())
+                else verseSpeech(state, fav.key, state.version)
+            }
+        }
+        1 -> u.highlights().map { h ->
+            verseSpeech(state, h.key, state.version, spokenRef(h.key) + ", " + h.reason.ifBlank { highlightNames[h.color] } + ". ")
+        }
+        2 -> u.notes().map { n -> S(spokenRef(n.key) + ". " + n.text, Ref.fromKey(n.key).label()) }
+        3 -> u.journal().map { e -> S(e.title.ifBlank { "Untitled" } + ". " + e.body, e.title.ifBlank { "(untitled)" }) }
+        4 -> u.tags().map { t -> S("${t.name}, ${t.count}.", t.name) }
+        else -> u.history().map { v -> verseSpeech(state, v.key, v.version) }
     }
 }

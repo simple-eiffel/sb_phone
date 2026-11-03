@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import sbphone.app.data.AppDb
 import sbphone.app.data.PackDb
 import sbphone.app.data.UserDb
+import sbphone.app.speech.Speaker
 import sbphone.fold.Pointing
 import sbphone.fold.PointingLevel
 import sbphone.fold.Ref
@@ -34,7 +35,7 @@ sealed interface Overlay {
     data object About : Overlay
 }
 
-class AppState(val bible: AppDb, val user: UserDb, initialPacks: List<PackDb> = emptyList()) {
+class AppState(val bible: AppDb, val user: UserDb, initialPacks: List<PackDb> = emptyList(), val speaker: Speaker) {
 
     /** Private packs loaded on this phone from files the user chose (never shipped in the app). */
     val packs = mutableStateListOf<PackDb>().apply { addAll(initialPacks) }
@@ -76,6 +77,34 @@ class AppState(val bible: AppDb, val user: UserDb, initialPacks: List<PackDb> = 
 
     /** Hebrew or Aramaic text at the chosen pointing level. */
     fun hebrew(text: String): String = Pointing.apply(text, pointing)
+
+    // ---- read aloud ----
+    var speechRate by mutableStateOf(user.setting("speechRate")?.toFloatOrNull() ?: 1f)
+        private set
+    /** Say each verse number before the verse. */
+    var sayVerseNumbers by mutableStateOf(user.setting("sayVerseNumbers") == "1")
+        private set
+    /** Go on into the next chapter at the end of one. */
+    var readOn by mutableStateOf(user.setting("readOn") != "0")
+        private set
+
+    init { speaker.rate = speechRate }
+
+    fun chooseSpeechRate(rate: Float) {
+        speechRate = rate
+        speaker.rate = rate
+        user.setSetting("speechRate", rate.toString())
+    }
+
+    fun chooseSayVerseNumbers(on: Boolean) {
+        sayVerseNumbers = on
+        user.setSetting("sayVerseNumbers", if (on) "1" else "0")
+    }
+
+    fun chooseReadOn(on: Boolean) {
+        readOn = on
+        user.setSetting("readOn", if (on) "1" else "0")
+    }
 
     /** Focus reading: the text alone, without bars. */
     var focus by mutableStateOf(false)
