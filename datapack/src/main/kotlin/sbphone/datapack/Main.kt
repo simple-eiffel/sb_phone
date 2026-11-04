@@ -3,7 +3,7 @@ package sbphone.datapack
 import java.io.File
 import kotlin.system.exitProcess
 
-private const val VAULT = "C:/Users/LJR19/OneDrive/Documents/Obsidian Vault/Scholars"
+private val VAULT = System.getProperty("user.home").replace('\\', '/') + "/OneDrive/Documents/Obsidian Vault/Scholars"
 
 /**
  * Usage:
@@ -28,7 +28,7 @@ fun main(args: Array<String>) {
         } else {
             val history = History(
                 File(opts["timeline"] ?: "$VAULT/Rix/History/_Timeline Build/02 - Seed"),
-                File(opts["cliopatria"] ?: "C:/Users/LJR19/AppData/Local/simple_bible/sources/cliopatria"),
+                File(opts["cliopatria"] ?: "${System.getProperty("user.home")}/AppData/Local/simple_bible/sources/cliopatria"),
                 File(opts["naturalearth"] ?: "D:/android/_dl/naturalearth"),
             )
             val out = opts["out"] ?: "app/src/main/assets/app.db"
